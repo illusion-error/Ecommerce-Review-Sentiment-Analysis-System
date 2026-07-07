@@ -109,76 +109,99 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import * as echarts from 'echarts' // 引入 ECharts
+import * as echarts from 'echarts'
+import axios from 'axios' // 确保你已经安装并引入了 axios
 
-// --- 单条分析 ---
+// --- 状态变量 ---
 const inputText = ref('')
 const loadingSingle = ref(false)
 const resultSingle = ref(null)
-
-const handleAnalyzeSingle = () => {
-  if (!inputText.value.trim()) return
-  loadingSingle.value = true
-  setTimeout(() => {
-    loadingSingle.value = false
-    const isBad = inputText.value.includes('差')
-    resultSingle.value = { sentiment: isBad ? 'negative' : 'positive', confidence: 0.9, strength: isBad ? 1.5 : 8.8 }
-    ElMessage.success('分析成功！')
-  }, 500)
-}
-
-// --- 批量分析 ---
 const loadingBatch = ref(false)
 const batchResult = ref(null)
-const handleMockUpload = () => {
-  loadingBatch.value = true
-  batchResult.value = true
-  setTimeout(() => {
-    loadingBatch.value = false
-    batchResult.value = { total: 100, positive_count: 75, negative_count: 25, avg_strength: 7.2 }
-  }, 1000)
+
+// --- 统计数据变量 (给 ECharts 用的) ---
+// 先给一些默认值，防止后端没数据时图表空白
+const statsData = ref({
+  positive: 75,
+  negative: 25,
+  intensity: [10, 15, 20, 30, 25]
+})
+
+// ================== 【新增：onMounted 钩子】 ==================
+// 页面加载时自动执行
+onMounted(async () => {
+  console.log('页面已加载，正在同步后端数据...')
+  await refreshStatistics() // 获取统计数据
+  await fetchHistory()      // 获取历史列表
+})
+
+// 封装一个获取统计数据的函数 (对应文档 5.3 节)
+const refreshStatistics = async () => {
+  try {
+    const res = await axios.get('/api/statistics/summary')
+    if (res.data.success) {
+      // 把后端返回的真实数字存到变量里
+      statsData.value.positive = res.data.data.positive_count
+      statsData.value.negative = res.data.data.negative_count
+      // 如果后端返回了强度分布，也存进去
+      if (res.data.data.intensity_distribution) {
+        statsData.value.intensity = res.data.data.intensity_distribution
+      }
+      console.log('统计数据同步成功')
+    }
+  } catch (error) {
+    console.error('获取统计数据失败，请确认后端接口 /api/statistics/summary 是否可用')
+  }
 }
 
-// --- 历史记录 ---
-const historyData = ref([
-  { id: 1, raw_text: "东西真的很好用", sentiment: "positive", strength: 9.5, time: "2026-07-07" },
-  { id: 2, raw_text: "物流太慢了", sentiment: "negative", strength: 2.1, time: "2026-07-07" },
-])
+// 封装一个获取历史记录的函数
+const historyData = ref([])
+const fetchHistory = async () => {
+  try {
+    const res = await axios.get('/api/history?page=1&page_size=10')
+    if (res.data.success) {
+      historyData.value = res.data.data.items // 对应文档返回的 items 字段
+    }
+  } catch (error) {
+    console.log('获取历史记录失败')
+  }
+}
+// ============================================================
 
-// --- ECharts 图表逻辑 (A-05) ---
+// --- 修改后的 ECharts 初始化逻辑：使用 statsData.value ---
 let pieChart = null
 let barChart = null
 
 const initCharts = () => {
-  // 1. 饼图配置
   const pieDom = document.getElementById('pieChart')
   if (pieDom) {
     pieChart = echarts.init(pieDom)
     pieChart.setOption({
       tooltip: { trigger: 'item' },
       legend: { bottom: '5%', left: 'center' },
-      color: ['#67C23A', '#F56C6C'], // 绿红配色
+      color: ['#67C23A', '#F56C6C'],
       series: [{
         name: '情感占比',
         type: 'pie',
         radius: ['40%', '70%'],
+        // 【关键】：这里使用了 statsData 里的真实数据
         data: [
-          { value: 75, name: '正向评论' },
-          { value: 25, name: '负向评论' }
+          { value: statsData.value.positive, name: '正向评论' },
+          { value: statsData.value.negative, name: '负向评论' }
         ]
       }]
     })
   }
 
-  // 2. 柱状图配置
   const barDom = document.getElementById('barChart')
   if (barDom) {
     barChart = echarts.init(barDom)
     barChart.setOption({
-      xAxis: { type: 'category', data: ['0-2分', '2-4分', '4-6分', '6-8分', '8-10分'] },
+      xAxis: { type: 'category', data: ['0-2', '2-4', '4-6', '6-8', '8-10'] },
       yAxis: { type: 'value' },
       series: [{
-        data: [10, 15, 20, 30, 25],
+        // 【关键】：这里使用了 statsData 里的强度分布
+        data: statsData.value.intensity,
         type: 'bar',
         itemStyle: { color: '#409EFF' }
       }]
@@ -186,17 +209,55 @@ const initCharts = () => {
   }
 }
 
-// 重点：Tabs 切换时，由于 DOM 可能是隐藏的，图表需要重新计算大小
+// 单条分析函数 (加上 async/await)
+const handleAnalyzeSingle = async () => {
+  if (!inputText.value.trim()) return
+  loadingSingle.value = true
+  try {
+    const res = await axios.post('/api/sentiment/single', { text: inputText.value })
+    if (res.data.success) {
+      resultSingle.value = res.data.data
+      ElMessage.success('分析成功')
+      // 分析完后，顺便刷新一下看板数据和历史列表，保证数据是最新的
+      refreshStatistics()
+      fetchHistory()
+    }
+  } catch (e) {
+    ElMessage.error('分析接口联调失败')
+  } finally {
+    loadingSingle.value = false
+  }
+}
+
+// 批量分析上传
+const handleMockUpload = async (file) => {
+  loadingBatch.value = true
+  const formData = new FormData()
+  formData.append('file', file.raw)
+  try {
+    const res = await axios.post('/api/sentiment/batch', formData)
+    if (res.data.success) {
+      batchResult.value = res.data.data
+      ElMessage.success('批量分析成功')
+      refreshStatistics() // 刷新看板
+    }
+  } catch (e) {
+    ElMessage.error('批量接口联调失败')
+  } finally {
+    loadingBatch.value = false
+  }
+}
+
+// Tabs 切换处理
 const handleTabClick = (pane) => {
   if (pane.props.name === 'dashboard') {
-    // 等待 DOM 渲染完成后再初始化图表
     nextTick(() => {
       initCharts()
     })
   }
 }
 
-// 自动适配窗口大小
+// 自动缩放
 window.addEventListener('resize', () => {
   pieChart && pieChart.resize()
   barChart && barChart.resize()
