@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / Vue
+node_modules/
+dist/
+.vite/
+
+# Environment
+.env
+.env.local
+
+# Data and model artifacts
+data/raw/*
+data/processed/*
+model/checkpoints/
+model/exported/
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# Reports generated during experiments
+reports/generated/
+
+# Keep directory placeholders
+!.gitkeep
+
