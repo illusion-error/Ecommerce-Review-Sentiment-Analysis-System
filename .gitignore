@@ -26,7 +26,7 @@ model/exported/
 
 # Reports generated during experiments
 reports/generated/
+backend/backend_data/
 
 # Keep directory placeholders
 !.gitkeep
-

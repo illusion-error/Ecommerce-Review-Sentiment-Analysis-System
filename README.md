@@ -75,6 +75,14 @@ Ecommerce-Review-Sentiment-Analysis-System/
 | `GET` | `/api/statistics/summary` | 查询情感统计汇总 |
 | `GET` | `/api/export/{task_id}` | 下载批量分析结果 |
 
+当前后端第一阶段已实现以上接口，并提供：
+
+- `deployment/mysql/init.sql`：MySQL 建表脚本，包含 `comments`、`analysis_records`、`batch_tasks`。
+- `backend/cache.py`：Redis 预测缓存，Redis 不可用时自动使用内存缓存，方便本地开发。
+- `backend/main.py`：FastAPI 主入口，支持单条分析、批量分析、历史查询、统计汇总和导出。
+- `docs/后端接口文档.md`：接口请求、响应和字段说明。
+- `tests/test_backend_api.py`：后端接口自动化测试。
+
 ## 数据字段规范
 
 清洗后的标准数据集建议包含以下字段：
@@ -137,4 +145,3 @@ npm run dev
 - 成员 B：FastAPI 后端、MySQL、Redis、接口联调。
 - 成员 C：数据预处理、BERT 微调、模型优化与推理服务。
 - 成员 D：Docker 部署、测试体系、性能报告与项目文档归档。
-
