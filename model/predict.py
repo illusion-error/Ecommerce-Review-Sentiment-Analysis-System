@@ -1,73 +1,1 @@
-﻿# model/predict.py - 干净版本
-import torch
-import re
-import os
-from transformers import BertTokenizer, BertForSequenceClassification
-
-class SentimentPredictor:
-    def __init__(self, model_path='model/weights/best_model'):
-        self.device = torch.device('cpu')
-        
-        if os.path.exists(model_path) and os.path.exists(os.path.join(model_path, 'config.json')):
-            self.tokenizer = BertTokenizer.from_pretrained(model_path)
-            self.model = BertForSequenceClassification.from_pretrained(model_path)
-        else:
-            print("模型不存在，使用预训练模型")
-            self.tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
-            self.model = BertForSequenceClassification.from_pretrained('bert-base-chinese', num_labels=2)
-        
-        self.model.to(self.device)
-        self.model.eval()
-        self.max_length = 128
-    
-    def clean_text(self, text):
-        if not text or not isinstance(text, str):
-            return ""
-        text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+])+', '', text)
-        text = re.sub(r'[^a-zA-Z\u4e00-\u9fa5\d\s\.\?,;:!！？，。、]', ' ', text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text
-    
-    def predict(self, text):
-        clean = self.clean_text(text)
-        if not clean:
-            return {'sentiment': 'unknown', 'confidence': 0, 'strength': 0, 'error': '文本为空'}
-        
-        encoding = self.tokenizer(clean, truncation=True, padding='max_length',
-                                 max_length=self.max_length, return_tensors='pt')
-        
-        with torch.no_grad():
-            outputs = self.model(**encoding)
-            probs = torch.softmax(outputs.logits, dim=1)
-            pred = torch.argmax(outputs.logits, dim=1).item()
-            conf = torch.max(probs).item()
-        
-        sentiment = 'positive' if pred == 1 else 'negative'
-        strength = conf * 10 if pred == 1 else (1 - conf) * 10
-        
-        return {
-            'text': text,
-            'sentiment': sentiment,
-            'label': pred,
-            'confidence': round(conf, 4),
-            'strength': round(strength, 2)
-        }
-
-_predictor = None
-
-def get_predictor():
-    global _predictor
-    if _predictor is None:
-        _predictor = SentimentPredictor()
-    return _predictor
-
-def predict_sentiment(text):
-    return get_predictor().predict(text)
-
-def predict_batch(texts):
-    return [predict_sentiment(t) for t in texts]
-
-if __name__ == "__main__":
-    print("测试情感分析...")
-    predictor = get_predictor()
-    print(predictor.predict("这个商品质量非常好！"))
+# model/predict.pyimport torchimport reimport osfrom transformers import BertTokenizer, BertForSequenceClassificationclass SentimentPredictor:    def __init__(self, model_path='model/weights/best_model'):        self.device = torch.device('cpu')                if os.path.exists(model_path) and os.path.exists(os.path.join(model_path, 'config.json')):            self.tokenizer = BertTokenizer.from_pretrained(model_path)            self.model = BertForSequenceClassification.from_pretrained(model_path)        else:            print("模型不存在，使用预训练模型")            self.tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')            self.model = BertForSequenceClassification.from_pretrained('bert-base-chinese', num_labels=2)                self.model.to(self.device)        self.model.eval()        self.max_length = 128        def clean_text(self, text):        if not text or not isinstance(text, str):            return ""        text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+])+', '', text)        text = re.sub(r'[^a-zA-Z\u4e00-\u9fa5\d\s\.\?,;:!！？，。、]', ' ', text)        text = re.sub(r'\s+', ' ', text).strip()        return text        def predict(self, text):        clean = self.clean_text(text)        if not clean:            return {'sentiment': 'unknown', 'confidence': 0, 'strength': 0, 'error': '文本为空'}                encoding = self.tokenizer(clean, truncation=True, padding='max_length',                                 max_length=self.max_length, return_tensors='pt')                with torch.no_grad():            outputs = self.model(**encoding)            probs = torch.softmax(outputs.logits, dim=1)            pred = torch.argmax(outputs.logits, dim=1).item()            conf = torch.max(probs).item()                sentiment = 'positive' if pred == 1 else 'negative'        strength = conf * 10 if pred == 1 else (1 - conf) * 10                return {            'text': text,            'sentiment': sentiment,            'label': pred,            'confidence': round(conf, 4),            'strength': round(strength, 2)        }_predictor = Nonedef get_predictor():    global _predictor    if _predictor is None:        _predictor = SentimentPredictor()    return _predictordef predict_sentiment(text):    return get_predictor().predict(text)def predict_batch(texts):    return [predict_sentiment(t) for t in texts]if __name__ == "__main__":    print("测试情感分析...")    predictor = get_predictor()    print(predictor.predict("这个商品质量非常好！"))
