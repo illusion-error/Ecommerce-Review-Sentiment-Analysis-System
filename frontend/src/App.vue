@@ -87,6 +87,26 @@
 
       <!-- ================= 模块 3：历史记录 (A-04) ================= -->
       <el-tab-pane label="历史记录查询">
+        <!-- 筛选区 -->
+        <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+          <el-select v-model="filterSentiment" placeholder="全部情感" clearable style="width: 150px;">
+            <el-option label="正向" value="positive" />
+            <el-option label="负向" value="negative" />
+          </el-select>
+          <!-- 时间选择器 -->
+          <el-date-picker
+            v-model="filterTime"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width: 250px;"
+          />
+          <el-button type="primary" @click="handleSearch">搜索</el-button>
+        </div>
+
+        <!-- 数据表格 -->
         <el-table :data="historyData" border style="width: 100%" stripe>
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="raw_text" label="原始评论" show-overflow-tooltip />
@@ -98,8 +118,47 @@
             </template>
           </el-table-column>
           <el-table-column prop="strength" label="强度" width="80" />
-          <el-table-column prop="time" label="分析时间" />
+          <!-- 留意后端返回的时间字段是 time 还是 created_at -->
+          <el-table-column prop="created_at" label="分析时间" width="180" />
+          
+          <!-- 新增的操作列：详情按钮 -->
+          <el-table-column label="操作" width="100" align="center">
+            <template #default="scope">
+              <el-button size="small" type="primary" link @click="showDetail(scope.row)">详情</el-button>
+            </template>
+          </el-table-column>
         </el-table>
+
+        <!-- 分页器 -->
+        <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+          <el-pagination
+            background
+            layout="total, prev, pager, next"
+            :total="historyTotal"
+            v-model:current-page="historyPage"
+            v-model:page-size="historyPageSize"
+            @current-change="handlePageChange"
+          />
+        </div>
+
+        <!-- 详情弹窗 -->
+        <el-dialog v-model="detailVisible" title="分析详情" width="500px">
+          <div style="line-height: 1.8;">
+            <p><strong>原始文本：</strong> {{ currentDetail.raw_text }}</p>
+            <p><strong>清洗文本：</strong> {{ currentDetail.clean_text || '暂无数据' }}</p>
+            <p><strong>情感倾向：</strong> 
+              <el-tag :type="currentDetail.sentiment === 'positive' ? 'success' : 'danger'">
+                {{ currentDetail.sentiment === 'positive' ? '正向' : '负向' }}
+              </el-tag>
+            </p>
+            <p><strong>置信度：</strong> {{ currentDetail.confidence ? (currentDetail.confidence * 100).toFixed(2) + '%' : '暂无数据' }}</p>
+            <p><strong>情感强度：</strong> {{ currentDetail.strength }} 分</p>
+            <p><strong>分析时间：</strong> {{ currentDetail.created_at || currentDetail.time }}</p>
+          </div>
+          <template #footer>
+            <el-button @click="detailVisible = false">关闭</el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -154,17 +213,73 @@ const refreshStatistics = async () => {
   }
 }
 
-// 封装一个获取历史记录的函数
+// ================== 修复 1：导出下载逻辑 (A-06) ==================
+const handleDownload = () => {
+  if (!batchResult.value || !batchResult.value.task_id) {
+    ElMessage.warning('暂无分析任务可以下载！')
+    return
+  }
+  // 使用浏览器的原生下载功能直接调用后端接口
+  window.open(`/api/export/${batchResult.value.task_id}`)
+  ElMessage.success('正在下载报告...')
+}
+
+
+// ================== 修复 2：历史记录完整闭环 (A-04) ==================
 const historyData = ref([])
+// 新增分页和筛选变量
+const historyPage = ref(1)
+const historyPageSize = ref(10)
+const historyTotal = ref(0)
+const filterSentiment = ref('')
+const filterTime = ref([]) // 存放起止时间 [start, end]
+
+// 新增弹窗变量
+const detailVisible = ref(false)
+const currentDetail = ref({})
+
 const fetchHistory = async () => {
   try {
-    const res = await axios.get('/api/history?page=1&page_size=10')
+    // 构造请求 URL，加入分页参数
+    let url = `/api/history?page=${historyPage.value}&page_size=${historyPageSize.value}`
+    
+    // 如果有情感筛选条件，加进去
+    if (filterSentiment.value) {
+      url += `&sentiment=${filterSentiment.value}`
+    }
+    
+    // 如果后端支持时间筛选（虽然文档没提，但 UI 留好扩展性）
+    if (filterTime.value && filterTime.value.length === 2) {
+      url += `&start_time=${filterTime.value[0]}&end_time=${filterTime.value[1]}`
+    }
+
+    const res = await axios.get(url)
     if (res.data.success) {
-      historyData.value = res.data.data.items // 对应文档返回的 items 字段
+      historyData.value = res.data.data.items || []
+      // 同步后端返回的总条数，让分页器生效
+      historyTotal.value = res.data.data.total || 0 
     }
   } catch (error) {
     console.log('获取历史记录失败')
   }
+}
+
+// 点击搜索按钮
+const handleSearch = () => {
+  historyPage.value = 1 // 每次搜索从第一页开始
+  fetchHistory()
+}
+
+// 翻页操作
+const handlePageChange = (newPage) => {
+  historyPage.value = newPage
+  fetchHistory()
+}
+
+// 打开详情弹窗
+const showDetail = (row) => {
+  currentDetail.value = row
+  detailVisible.value = true
 }
 // ============================================================
 
