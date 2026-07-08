@@ -1,35 +1,107 @@
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
-
-# Node / Vue
-node_modules/
-dist/
-.vite/
-
-# Environment
-.env
-.env.local
-
-# Data and model artifacts
-data/raw/*
-data/processed/*
-model/checkpoints/
-model/exported/
+# ============================================
+# 模型文件（太大，不上传GitHub）
+# ============================================
 model/weights/
+*.safetensors
+*.bin
+*.h5
 *.pt
 *.pth
 *.onnx
-*.bin
-*.safetensors
-*.h5
 
-# Reports generated during experiments
-reports/generated/
-backend/backend_data/
+# ============================================
+# Python 相关
+# ============================================
+venv/
+env/
+ENV/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
 
-# Keep directory placeholders
-!.gitkeep
+# ============================================
+# 日志文件
+# ============================================
+logs/
+*.log
+
+# ============================================
+# 数据文件（允许提交 processed，但忽略 raw）
+# ============================================
+data/raw/
+# data/processed/   ← 已注释，允许提交 processed 目录下的 CSV
+
+# ============================================
+# IDE 和编辑器
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================
+# 测试和覆盖率
+# ============================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+
+# ============================================
+# Jupyter Notebook
+# ============================================
+.ipynb_checkpoints/
+*.ipynb
+
+# ============================================
+# 其他临时文件
+# ============================================
+*.tmp
+*.temp
+*.bak
+*.cache
+*.orig
+*.rej
+
+# ============================================
+# 环境变量和密钥
+# ============================================
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# Docker 相关
+# ============================================
+.dockerignore
+docker-compose.override.yml
+
+# ============================================
+# 前端相关
+# ============================================
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.log
+frontend/package-lock.json
+
+# ============================================
+# 后端相关
+# ============================================
+backend/__pycache__/
+backend/.pytest_cache/
+backend/*.pyc
