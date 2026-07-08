@@ -2,7 +2,7 @@
 
 ## 适用阶段
 
-本文档用于第一阶段“基础可运行版”验收，目标是使用 Docker Compose 启动后端、前端占位页、MySQL 和 Redis。
+本文档用于第一阶段“基础可运行版”验收，目标是使用 Docker Compose 启动后端、Vue 前端、MySQL 和 Redis。
 
 ## 启动前准备
 
@@ -39,7 +39,7 @@ docker compose up -d --build
 | 服务 | 容器名 | 端口 | 说明 |
 | --- | --- | --- | --- |
 | backend | sentiment-backend | 8000 | FastAPI 后端接口 |
-| frontend | sentiment-frontend | 5173 | 第一阶段前端占位页 |
+| frontend | sentiment-frontend | 5173 | Vue 前端页面 |
 | mysql | sentiment-mysql | 3306 | 保存评论和分析记录 |
 | redis | sentiment-redis | 6379 | 缓存重复文本预测结果 |
 
@@ -57,7 +57,7 @@ http://127.0.0.1:8000/api/health
 http://127.0.0.1:8000/docs
 ```
 
-前端占位页：
+前端页面：
 
 ```text
 http://127.0.0.1:5173
@@ -92,6 +92,6 @@ docker compose up -d --build
 
 ## 第一阶段说明
 
-当前前端是 Docker 占位页，用于证明前端服务能被 Compose 启动。正式 Vue3 页面由成员 A 后续补充后，可继续沿用 `frontend/Dockerfile` 做生产构建调整。
+当前前端 Dockerfile 会执行 Vue/Vite 生产构建，并使用 Nginx 托管 `dist` 目录。Nginx 同时将 `/api/` 请求代理到后端容器 `backend:8000`，用于 Docker 环境下的前后端联调。
 
 当前模型如未接入 BERT，会使用后端规则模型占位，保证接口、数据库、缓存和批量分析流程先跑通。
