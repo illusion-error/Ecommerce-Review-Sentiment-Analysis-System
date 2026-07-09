@@ -239,10 +239,21 @@ def history(
     page_size: int = Query(default=20, ge=1, le=100),
     sentiment: str = Query(default=""),
     product_id: str = Query(default=""),
+    start_time: str = Query(default=""),
+    end_time: str = Query(default=""),
 ) -> Dict[str, Any]:
     if sentiment and sentiment not in {"positive", "negative"}:
         raise HTTPException(status_code=400, detail="sentiment 只能是 positive 或 negative")
-    return api_response(list_history(page, page_size, sentiment=sentiment, product_id=product_id))
+    return api_response(
+        list_history(
+            page,
+            page_size,
+            sentiment=sentiment,
+            product_id=product_id,
+            start_time=start_time,
+            end_time=end_time,
+        )
+    )
 
 
 @app.get("/api/statistics/summary")

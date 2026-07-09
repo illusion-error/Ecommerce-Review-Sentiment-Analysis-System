@@ -76,6 +76,43 @@ def _dict(row: Any) -> Optional[Dict[str, Any]]:
     return dict(row)
 
 
+def _normalize_time_bound(value: str, *, end: bool = False) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if len(value) == 10 and value[4] == "-" and value[7] == "-":
+        return f"{value}T23:59:59+00:00" if end else f"{value}T00:00:00+00:00"
+    return value
+
+
+def _analysis_filters(
+    *,
+    sentiment: str = "",
+    product_id: str = "",
+    start_time: str = "",
+    end_time: str = "",
+) -> tuple[str, List[Any]]:
+    ph = _placeholder()
+    filters: List[str] = []
+    params: List[Any] = []
+    if sentiment:
+        filters.append(f"sentiment={ph}")
+        params.append(sentiment)
+    if product_id:
+        filters.append(f"product_id={ph}")
+        params.append(product_id)
+    normalized_start = _normalize_time_bound(start_time)
+    normalized_end = _normalize_time_bound(end_time, end=True)
+    if normalized_start:
+        filters.append(f"created_at>={ph}")
+        params.append(normalized_start)
+    if normalized_end:
+        filters.append(f"created_at<={ph}")
+        params.append(normalized_end)
+    where = "WHERE " + " AND ".join(filters) if filters else ""
+    return where, params
+
+
 def init_db() -> None:
     """Initialize local SQLite tables.
 
@@ -254,17 +291,21 @@ def get_batch_task(task_id: str) -> Optional[Dict[str, Any]]:
     return _dict(row)
 
 
-def list_history(page: int, page_size: int, sentiment: str = "", product_id: str = "") -> Dict[str, Any]:
+def list_history(
+    page: int,
+    page_size: int,
+    sentiment: str = "",
+    product_id: str = "",
+    start_time: str = "",
+    end_time: str = "",
+) -> Dict[str, Any]:
     ph = _placeholder()
-    filters: List[str] = []
-    params: List[Any] = []
-    if sentiment:
-        filters.append(f"sentiment={ph}")
-        params.append(sentiment)
-    if product_id:
-        filters.append(f"product_id={ph}")
-        params.append(product_id)
-    where = "WHERE " + " AND ".join(filters) if filters else ""
+    where, params = _analysis_filters(
+        sentiment=sentiment,
+        product_id=product_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
     offset = (page - 1) * page_size
     with get_conn() as conn:
         total_row = conn.execute(f"SELECT COUNT(*) AS count FROM analysis_records {where}", tuple(params)).fetchone()
@@ -286,9 +327,7 @@ def list_history(page: int, page_size: int, sentiment: str = "", product_id: str
 
 
 def summary_statistics(product_id: str = "") -> Dict[str, Any]:
-    ph = _placeholder()
-    where = f"WHERE product_id={ph}" if product_id else ""
-    params = (product_id,) if product_id else ()
+    where, params = _analysis_filters(product_id=product_id)
     with get_conn() as conn:
         row = conn.execute(
             f"""
@@ -300,12 +339,28 @@ def summary_statistics(product_id: str = "") -> Dict[str, Any]:
             FROM analysis_records
             {where}
             """,
-            params,
+            tuple(params),
         ).fetchone()
+        strength_rows = conn.execute(
+            f"""
+            SELECT strength
+            FROM analysis_records
+            {where}
+            """,
+            tuple(params),
+        ).fetchall()
     data = dict(row)
     total = int(data.get("total") or 0)
     positive = int(data.get("positive_count") or 0)
     negative = int(data.get("negative_count") or 0)
+    intensity_distribution = [0, 0, 0, 0, 0]
+    for item in strength_rows:
+        try:
+            strength = float(dict(item).get("strength") or 0.0)
+        except (TypeError, ValueError):
+            strength = 0.0
+        index = min(4, max(0, int(strength // 2)))
+        intensity_distribution[index] += 1
     return {
         "total": total,
         "positive_count": positive,
@@ -313,6 +368,7 @@ def summary_statistics(product_id: str = "") -> Dict[str, Any]:
         "positive_ratio": round(positive / total, 4) if total else 0.0,
         "negative_ratio": round(negative / total, 4) if total else 0.0,
         "avg_strength": round(float(data.get("avg_strength") or 0.0), 2),
+        "intensity_distribution": intensity_distribution,
     }
 
 

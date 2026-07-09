@@ -50,12 +50,33 @@ def test_batch_history_summary_and_export():
     history = client.get("/api/history", params={"page": 1, "page_size": 10, "sentiment": "positive"})
     assert history.status_code == 200
     assert history.json()["data"]["total"] >= 1
+    created_date = history.json()["data"]["items"][0]["created_at"][:10]
+    ranged_history = client.get(
+        "/api/history",
+        params={
+            "page": 1,
+            "page_size": 10,
+            "sentiment": "positive",
+            "start_time": created_date,
+            "end_time": created_date,
+        },
+    )
+    assert ranged_history.status_code == 200
+    assert ranged_history.json()["data"]["total"] >= 1
+    empty_history = client.get(
+        "/api/history",
+        params={"page": 1, "page_size": 10, "start_time": "1900-01-01", "end_time": "1900-01-01"},
+    )
+    assert empty_history.status_code == 200
+    assert empty_history.json()["data"]["total"] == 0
 
     summary = client.get("/api/statistics/summary", params={"product_id": "phone"})
     assert summary.status_code == 200
-    assert summary.json()["data"]["total"] >= 2
+    summary_data = summary.json()["data"]
+    assert summary_data["total"] >= 2
+    assert len(summary_data["intensity_distribution"]) == 5
+    assert sum(summary_data["intensity_distribution"]) == summary_data["total"]
 
     exported = client.get(f"/api/export/{task_id}")
     assert exported.status_code == 200
     assert "raw_text" in exported.text
-
