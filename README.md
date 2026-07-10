@@ -22,7 +22,7 @@
 | 数据预处理 | CSV 读取、GBK/UTF-8 容错、URL/空白/非中文字符清洗、重复和异常样本过滤 |
 | 数据集划分 | 按 8:1:1 分层划分 train/val/test，保持正负样本比例一致 |
 | 模型训练 | BERT 微调、训练日志、评估指标、混淆矩阵、模型保存 |
-| 模型优化 | 动态量化、CPU 推理加速、平均响应时间统计 |
+| 模型评估 | 输出 Accuracy、Precision、Recall、F1 和混淆矩阵 |
 | 在线推理 | 单条评论情感分析，输出 label、sentiment、confidence、strength |
 | 批量分析 | 上传 CSV/Excel，批量返回每条评论情感和统计汇总 |
 | 数据存储 | MySQL 保存评论、预测结果、批次任务和导出记录 |
@@ -39,7 +39,7 @@ FastAPI REST API
         ↓
 Sentiment Service
         ↓
-BERT / Quantized BERT Inference
+BERT Inference / Rule Fallback
         ↓
 MySQL 历史数据 + Redis 缓存
         ↓
@@ -95,18 +95,24 @@ Ecommerce-Review-Sentiment-Analysis-System/
 | `star` | 星级评分 |
 | `label` | 情感标签，0 为负向，1 为正向 |
 | `clean_content` | 清洗后的纯中文评论 |
-| `cut_words` | Jieba 分词结果 |
+| `cut_words` | 可选分词结果，当前 BERT 流程主要使用 `clean_content` |
 
 ## 运行方式
 
-当前仓库已包含项目文档和工程目录骨架，代码按分工逐步补充。
-
-后续推荐启动方式：
+推荐启动方式：
 
 ```powershell
 copy .env.example .env
 docker compose up -d --build
 ```
+
+默认访问地址：
+
+- 前端页面：`http://127.0.0.1:15173`
+- 后端接口：`http://127.0.0.1:18000/api/health`
+- 后端文档：`http://127.0.0.1:18000/docs`
+
+说明：Docker 后端镜像默认安装轻量 API 依赖，保证前端、后端、MySQL、Redis 可以快速一键启动。若容器内未放置 BERT 权重，后端会自动使用规则兜底模型；本地训练和 BERT 推理请使用 `backend/requirements.txt` 安装完整依赖。
 
 本地开发可分别启动：
 
@@ -135,7 +141,7 @@ npm run dev
 | --- | --- |
 | 数据质量 | `clean_content` 字段无 URL、无空白、无非中文噪声；训练/验证/测试集类别比例保持一致 |
 | 模型效果 | 测试集输出 Accuracy、Precision、Recall、F1、混淆矩阵 |
-| 推理性能 | 单条文本接口平均响应时间目标 ≤ 500ms，重复文本命中 Redis 缓存 |
+| 推理性能 | 单条文本接口可正常返回，重复文本命中 Redis 缓存；精确压测放在后续优化 |
 | 功能完整性 | 单条分析、批量分析、历史查询、结果导出、可视化图表全部可用 |
 | 部署稳定性 | Docker Compose 可启动前端、后端、MySQL、Redis |
 
@@ -143,5 +149,5 @@ npm run dev
 
 - 成员 A：前端页面与 ECharts 可视化。
 - 成员 B：FastAPI 后端、MySQL、Redis、接口联调。
-- 成员 C：数据预处理、BERT 微调、模型优化与推理服务。
+- 成员 C：数据预处理、BERT 微调、模型评估与推理服务。
 - 成员 D：Docker 部署、测试体系、性能报告与项目文档归档。

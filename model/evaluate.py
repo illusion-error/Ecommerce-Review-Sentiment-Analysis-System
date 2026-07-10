@@ -13,6 +13,16 @@ from tqdm import tqdm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+WEIGHT_FILENAMES = ("model.safetensors", "pytorch_model.bin", "tf_model.h5")
+
+
+def has_model_weights(model_path):
+    """Return True only when the model directory contains real weights."""
+
+    return os.path.isdir(model_path) and any(
+        os.path.exists(os.path.join(model_path, filename)) for filename in WEIGHT_FILENAMES
+    )
+
 class EvaluationDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=128):
         self.texts = texts
@@ -38,11 +48,11 @@ def evaluate_model():
     """评估模型"""
     model_path = 'model/weights/best_model'
     
-    # 检查模型是否存在
-    if not os.path.exists(model_path) or not os.path.exists(os.path.join(model_path, 'config.json')):
-        logger.error(f"模型不存在: {model_path}，请先训练模型")
-        logger.info("尝试使用预训练模型进行评估...")
-        model_path = 'bert-base-chinese'
+    # 检查模型是否存在。config/tokenizer 不能代表完整模型，必须有真实权重文件。
+    if not has_model_weights(model_path):
+        logger.error(f"模型权重不存在: {model_path}")
+        logger.error("请先下载网盘权重，或运行 `python model/train_bert.py` 生成本地权重。")
+        return None
     
     device = torch.device('cpu')
     logger.info(f"使用设备: {device}")
