@@ -1,193 +1,243 @@
-# model/train_bert.py - 纯手动训练版（不依赖Trainer）
-import torch
-from transformers import BertTokenizer, BertForSequenceClassification
-from torch.utils.data import DataLoader, Dataset
-from torch.optim import AdamW
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-import pandas as pd
-import numpy as np
-import os
+"""Train the BERT sentiment model without relying on Trainer.
+
+The repository cannot store the final 300MB+ weight file on GitHub. This
+script keeps the model pipeline reproducible in three situations:
+
+1. If `model/weights/best_model` already contains real weights, continue from it.
+2. If the machine can reach HuggingFace, fine-tune `bert-base-chinese`.
+3. If neither is true, initialize BERT from the local config and tokenizer, then
+   train it on `data/processed/*.csv` to generate local weights.
+"""
+
+from __future__ import annotations
+
 import json
 import logging
-from tqdm import tqdm
+import os
+from pathlib import Path
+from typing import Tuple
 
-logging.basicConfig(level=logging.INFO)
+import pandas as pd
+import torch
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+from transformers import BertConfig, BertForSequenceClassification, BertTokenizer
+
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+
+BASE_MODEL_NAME = "bert-base-chinese"
+LOCAL_MODEL_DIR = Path("model/weights/best_model")
+PROCESSED_DATA_DIR = Path("data/processed")
+REPORT_DIR = Path("reports")
+WEIGHT_FILENAMES = ("model.safetensors", "pytorch_model.bin", "tf_model.h5")
+
+
 class SentimentDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_len=128):
-        self.texts = texts
-        self.labels = labels
+    """PyTorch dataset that tokenizes one review into BERT input tensors."""
+
+    def __init__(self, texts, labels, tokenizer: BertTokenizer, max_len: int = 128):
+        self.texts = list(texts)
+        self.labels = list(labels)
         self.tokenizer = tokenizer
         self.max_len = max_len
-    
-    def __len__(self):
+
+    def __len__(self) -> int:
         return len(self.texts)
-    
-    def __getitem__(self, idx):
+
+    def __getitem__(self, idx: int):
         text = str(self.texts[idx])
         label = int(self.labels[idx])
-        
         encoding = self.tokenizer(
             text,
             truncation=True,
-            padding='max_length',
+            padding="max_length",
             max_length=self.max_len,
-            return_tensors='pt'
+            return_tensors="pt",
         )
-        
         return {
-            'input_ids': encoding['input_ids'].flatten(),
-            'attention_mask': encoding['attention_mask'].flatten(),
-            'labels': torch.tensor(label, dtype=torch.long)
+            "input_ids": encoding["input_ids"].flatten(),
+            "attention_mask": encoding["attention_mask"].flatten(),
+            "labels": torch.tensor(label, dtype=torch.long),
         }
 
-def train():
-    # 创建目录
-    os.makedirs('model/weights', exist_ok=True)
-    os.makedirs('reports', exist_ok=True)
-    os.makedirs('logs', exist_ok=True)
-    
-    # 加载数据
-    train_df = pd.read_csv('data/processed/train.csv')
-    val_df = pd.read_csv('data/processed/val.csv')
-    test_df = pd.read_csv('data/processed/test.csv')
-    
-    logger.info(f"训练集: {len(train_df)}, 验证集: {len(val_df)}, 测试集: {len(test_df)}")
-    
+
+def has_model_weights(model_dir: Path = LOCAL_MODEL_DIR) -> bool:
+    """Return True only when the directory contains real model weights."""
+
+    return model_dir.exists() and any((model_dir / name).exists() for name in WEIGHT_FILENAMES)
+
+
+def load_tokenizer_and_model(num_labels: int = 2) -> Tuple[BertTokenizer, BertForSequenceClassification]:
+    """Load a usable tokenizer/model pair with an offline-safe fallback."""
+
+    if has_model_weights():
+        logger.info("Loading local fine-tuned model from %s", LOCAL_MODEL_DIR)
+        tokenizer = BertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
+        model = BertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR, num_labels=num_labels)
+        return tokenizer, model
+
+    try:
+        logger.info("Local weights are missing; trying online base model: %s", BASE_MODEL_NAME)
+        tokenizer = BertTokenizer.from_pretrained(BASE_MODEL_NAME)
+        model = BertForSequenceClassification.from_pretrained(BASE_MODEL_NAME, num_labels=num_labels)
+        return tokenizer, model
+    except Exception as exc:
+        logger.warning("Could not download %s: %s", BASE_MODEL_NAME, exc)
+        logger.warning("Falling back to local config/tokenizer and random BERT initialization.")
+        if not (LOCAL_MODEL_DIR / "config.json").exists():
+            raise FileNotFoundError(
+                "Missing model/weights/best_model/config.json. "
+                "Download the shared weight package or keep config/tokenizer files in the repo."
+            ) from exc
+        tokenizer = BertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
+        config = BertConfig.from_pretrained(LOCAL_MODEL_DIR)
+        config.num_labels = num_labels
+        config.problem_type = "single_label_classification"
+        model = BertForSequenceClassification(config)
+        return tokenizer, model
+
+
+def load_processed_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load train/validation/test CSV files generated by data_preprocess.py."""
+
+    paths = {
+        "train": PROCESSED_DATA_DIR / "train.csv",
+        "val": PROCESSED_DATA_DIR / "val.csv",
+        "test": PROCESSED_DATA_DIR / "test.csv",
+    }
+    missing = [str(path) for path in paths.values() if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            "Processed dataset is missing: "
+            + ", ".join(missing)
+            + ". Run `python model/data_preprocess.py` first."
+        )
+
+    train_df = pd.read_csv(paths["train"])
+    val_df = pd.read_csv(paths["val"])
+    test_df = pd.read_csv(paths["test"])
+    required_columns = {"clean_content", "label"}
+    for name, df in (("train", train_df), ("val", val_df), ("test", test_df)):
+        if not required_columns.issubset(df.columns):
+            raise ValueError(f"{name}.csv must contain columns: {sorted(required_columns)}")
+    return train_df, val_df, test_df
+
+
+def evaluate(model, data_loader: DataLoader, device: torch.device) -> Tuple[float, list[int], list[int]]:
+    """Run one evaluation pass and return accuracy, labels and predictions."""
+
+    model.eval()
+    predictions: list[int] = []
+    labels_all: list[int] = []
+    with torch.no_grad():
+        for batch in data_loader:
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            labels = batch["labels"].to(device)
+            outputs = model(input_ids, attention_mask=attention_mask)
+            preds = torch.argmax(outputs.logits, dim=1)
+            predictions.extend(preds.cpu().numpy().tolist())
+            labels_all.extend(labels.cpu().numpy().tolist())
+
+    if not labels_all:
+        return 0.0, labels_all, predictions
+    return accuracy_score(labels_all, predictions), labels_all, predictions
+
+
+def train() -> None:
+    """Train and save the best sentiment model."""
+
+    LOCAL_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    Path("logs").mkdir(exist_ok=True)
+
+    train_df, val_df, test_df = load_processed_data()
+    logger.info("Dataset sizes: train=%s, val=%s, test=%s", len(train_df), len(val_df), len(test_df))
     if len(train_df) < 2:
-        logger.error("训练数据太少！")
-        return
-    
-    # 加载模型
-    logger.info("加载BERT模型...")
-    tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
-    model = BertForSequenceClassification.from_pretrained('bert-base-chinese', num_labels=2)
-    
-    # 设备
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        raise ValueError("Training data is too small. Check data/raw/comments.csv and preprocessing output.")
+
+    tokenizer, model = load_tokenizer_and_model(num_labels=2)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    logger.info(f"使用设备: {device}")
-    
-    # 创建数据集
-    train_dataset = SentimentDataset(
-        train_df['clean_content'].values,
-        train_df['label'].values,
-        tokenizer
-    )
-    val_dataset = SentimentDataset(
-        val_df['clean_content'].values,
-        val_df['label'].values,
-        tokenizer
-    )
-    test_dataset = SentimentDataset(
-        test_df['clean_content'].values,
-        test_df['label'].values,
-        tokenizer
-    )
-    
-    # 数据加载器
+    logger.info("Using device: %s", device)
+
+    train_dataset = SentimentDataset(train_df["clean_content"].values, train_df["label"].values, tokenizer)
+    val_dataset = SentimentDataset(val_df["clean_content"].values, val_df["label"].values, tokenizer)
+    test_dataset = SentimentDataset(test_df["clean_content"].values, test_df["label"].values, tokenizer)
+
     batch_size = min(4, len(train_dataset))
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    
-    # 优化器
+
     optimizer = AdamW(model.parameters(), lr=2e-5)
-    
-    # 训练
-    epochs = 5
-    logger.info(f"开始训练 {epochs} 个epoch...")
-    
-    best_val_acc = 0
-    
+    epochs = int(os.getenv("BERT_TRAIN_EPOCHS", "5"))
+    best_val_acc = -1.0
+    logger.info("Starting training for %s epochs", epochs)
+
     for epoch in range(epochs):
-        # 训练
         model.train()
-        total_loss = 0
-        train_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
-        
+        total_loss = 0.0
+        train_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
         for batch in train_bar:
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            labels = batch['labels'].to(device)
-            
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            labels = batch["labels"].to(device)
+
             optimizer.zero_grad()
             outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss
             loss.backward()
             optimizer.step()
-            
-            total_loss += loss.item()
-            train_bar.set_postfix({'loss': f'{loss.item():.4f}'})
-        
-        avg_loss = total_loss / len(train_loader)
-        
-        # 验证
-        model.eval()
-        val_preds = []
-        val_labels = []
-        
-        with torch.no_grad():
-            for batch in val_loader:
-                input_ids = batch['input_ids'].to(device)
-                attention_mask = batch['attention_mask'].to(device)
-                labels = batch['labels'].to(device)
-                
-                outputs = model(input_ids, attention_mask=attention_mask)
-                preds = torch.argmax(outputs.logits, dim=1)
-                
-                val_preds.extend(preds.cpu().numpy())
-                val_labels.extend(labels.cpu().numpy())
-        
-        val_acc = accuracy_score(val_labels, val_preds)
-        
-        logger.info(f"Epoch {epoch+1}: Loss={avg_loss:.4f}, Val Acc={val_acc:.4f}")
-        
-        # 保存最佳模型
-        if val_acc > best_val_acc:
+
+            total_loss += float(loss.item())
+            train_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+        avg_loss = total_loss / max(1, len(train_loader))
+        val_acc, _, _ = evaluate(model, val_loader, device)
+        logger.info("Epoch %s: loss=%.4f, val_acc=%.4f", epoch + 1, avg_loss, val_acc)
+
+        if val_acc >= best_val_acc:
             best_val_acc = val_acc
-            model.save_pretrained('model/weights/best_model')
-            tokenizer.save_pretrained('model/weights/best_model')
-            logger.info(f"✓ 保存最佳模型 (Acc: {val_acc:.4f})")
-    
-    # 加载最佳模型测试
-    logger.info("加载最佳模型进行测试...")
-    model = BertForSequenceClassification.from_pretrained('model/weights/best_model')
+            model.save_pretrained(LOCAL_MODEL_DIR)
+            tokenizer.save_pretrained(LOCAL_MODEL_DIR)
+            logger.info("Saved best model to %s (val_acc=%.4f)", LOCAL_MODEL_DIR, val_acc)
+
+    if not has_model_weights():
+        raise RuntimeError("Training finished but no model weight file was saved.")
+
+    logger.info("Loading saved best model for final test evaluation")
+    model = BertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR)
     model.to(device)
-    model.eval()
-    
-    test_preds = []
-    test_labels = []
-    
-    with torch.no_grad():
-        for batch in test_loader:
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            labels = batch['labels'].to(device)
-            
-            outputs = model(input_ids, attention_mask=attention_mask)
-            preds = torch.argmax(outputs.logits, dim=1)
-            
-            test_preds.extend(preds.cpu().numpy())
-            test_labels.extend(labels.cpu().numpy())
-    
-    # 计算指标
+    test_acc, test_labels, test_preds = evaluate(model, test_loader, device)
+
     if len(test_labels) > 1:
-        acc = accuracy_score(test_labels, test_preds)
         precision, recall, f1, _ = precision_recall_fscore_support(
-            test_labels, test_preds, average='binary', zero_division=0
+            test_labels, test_preds, average="binary", zero_division=0
         )
-        
-        logger.info(f"测试结果: Acc={acc:.4f}, Precision={precision:.4f}, Recall={recall:.4f}, F1={f1:.4f}")
-        
-        results = {'accuracy': acc, 'precision': precision, 'recall': recall, 'f1': f1}
-        with open('reports/test_results.json', 'w') as f:
-            json.dump(results, f, indent=2)
+        results = {
+            "accuracy": round(float(test_acc), 4),
+            "precision": round(float(precision), 4),
+            "recall": round(float(recall), 4),
+            "f1": round(float(f1), 4),
+            "test_size": len(test_labels),
+            "best_val_accuracy": round(float(best_val_acc), 4),
+            "weight_file_present": has_model_weights(),
+        }
+        logger.info("Test results: %s", results)
+        with (REPORT_DIR / "test_results.json").open("w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
     else:
-        logger.info(f"测试集预测: {test_preds}, 真实: {test_labels}")
-    
-    logger.info("训练完成！")
+        logger.info("Test predictions=%s, labels=%s", test_preds, test_labels)
+
+    logger.info("Training completed")
+
 
 if __name__ == "__main__":
     train()

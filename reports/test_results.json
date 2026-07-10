@@ -1,6 +1,9 @@
 {
-  "accuracy": 0.6666666666666666,
-  "precision": 0.6666666666666666,
+  "accuracy": 0.8,
+  "precision": 0.75,
   "recall": 1.0,
-  "f1": 0.8
+  "f1": 0.8571,
+  "test_size": 5,
+  "best_val_accuracy": 0.6,
+  "weight_file_present": true
 }

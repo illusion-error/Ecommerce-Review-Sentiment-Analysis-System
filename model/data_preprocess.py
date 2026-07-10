@@ -35,6 +35,23 @@ def map_star_to_label(star):
     except:
         return -1
 
+def pick_column(columns, exact_names, fuzzy_names=(), exclude_names=()):
+    """Pick a dataset column by priority."""
+    original_columns = list(columns)
+    normalized = {str(col).strip().lower(): col for col in original_columns}
+    excludes = {name.lower() for name in exclude_names}
+    for name in exact_names:
+        key = name.lower()
+        if key in normalized and key not in excludes:
+            return normalized[key]
+    for col in original_columns:
+        key = str(col).strip().lower()
+        if key in excludes or any(excluded in key for excluded in excludes):
+            continue
+        if any(name.lower() in key for name in fuzzy_names):
+            return col
+    return None
+
 def process_data():
     """处理数据"""
     input_path = 'data/raw/comments.csv'
@@ -66,13 +83,17 @@ def process_data():
     logger.info(f"列名: {df.columns.tolist()}")
     
     # 查找 content 列
-    content_col = None
-    star_col = None
-    for col in df.columns:
-        if 'content' in col.lower() or 'comment' in col.lower():
-            content_col = col
-        if 'star' in col.lower() or 'score' in col.lower() or 'rating' in col.lower():
-            star_col = col
+    content_col = pick_column(
+        df.columns,
+        exact_names=["content", "text", "raw_text", "comment", "review", "评论", "评价", "评论内容"],
+        fuzzy_names=["content", "review"],
+        exclude_names=["comment_time", "time", "date", "created_at"],
+    )
+    star_col = pick_column(
+        df.columns,
+        exact_names=["star", "score", "rating", "label"],
+        fuzzy_names=["star", "score", "rating"],
+    )
     
     if content_col is None:
         logger.error("找不到评论内容列！")
