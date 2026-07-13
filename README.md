@@ -74,12 +74,16 @@ Ecommerce-Review-Sentiment-Analysis-System/
 | `GET` | `/api/history` | 分页查询分析历史 |
 | `GET` | `/api/statistics/summary` | 查询情感统计汇总 |
 | `GET` | `/api/export/{task_id}` | 下载批量分析结果 |
+| `GET` | `/api/insights/keywords` | 查询正/负向高频词 |
+| `GET` | `/api/insights/aspects` | 查询价格、物流、质量维度评分 |
+| `GET` | `/api/summary/product` | 生成商品评论优缺点和购买建议 |
 
 当前后端第一阶段已实现以上接口，并提供：
 
 - `deployment/mysql/init.sql`：MySQL 建表脚本，包含 `comments`、`analysis_records`、`batch_tasks`。
 - `backend/cache.py`：Redis 预测缓存，Redis 不可用时自动使用内存缓存，方便本地开发。
 - `backend/main.py`：FastAPI 主入口，支持单条分析、批量分析、历史查询、统计汇总和导出。
+- `model/text_insights.py`：第二阶段文本洞察模块，支持词云、雷达图和规则摘要接口。
 - `docs/后端接口文档.md`：接口请求、响应和字段说明。
 - `tests/test_backend_api.py`：后端接口自动化测试。
 

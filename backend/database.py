@@ -386,3 +386,34 @@ def records_by_task(task_id: str) -> List[Dict[str, Any]]:
             (task_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def analysis_records_for_insights(
+    *,
+    product_id: str = "",
+    start_time: str = "",
+    end_time: str = "",
+    limit: int = 5000,
+) -> List[Dict[str, Any]]:
+    """Read recent analysis records for word cloud, radar and summary APIs."""
+
+    ph = _placeholder()
+    where, params = _analysis_filters(
+        product_id=product_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    safe_limit = max(1, min(int(limit), 20000))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id, task_id, product_id, raw_text, clean_text, label, sentiment,
+                   confidence, strength, cached, created_at
+            FROM analysis_records
+            {where}
+            ORDER BY created_at DESC, id DESC
+            LIMIT {ph}
+            """,
+            tuple(params + [safe_limit]),
+        ).fetchall()
+    return [dict(row) for row in rows]

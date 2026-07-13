@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from .cache import prediction_cache
 from .database import (
+    analysis_records_for_insights,
     create_batch_task,
     get_batch_task,
     init_db,
@@ -26,6 +27,7 @@ from .database import (
 from .schemas import SingleSentimentRequest
 from .sentiment import predict_sentiment
 from .settings import settings
+from model.text_insights import extract_keywords, generate_rule_summary, score_aspects
 
 
 @asynccontextmanager
@@ -261,6 +263,75 @@ def statistics_summary(product_id: str = Query(default="")) -> Dict[str, Any]:
     data = summary_statistics(product_id=product_id)
     data["cache"] = prediction_cache.stats()
     return api_response(data)
+
+
+@app.get("/api/insights/keywords")
+def insight_keywords(
+    product_id: str = Query(default=""),
+    top_k: int = Query(default=30, ge=1, le=100),
+    start_time: str = Query(default=""),
+    end_time: str = Query(default=""),
+) -> Dict[str, Any]:
+    records = analysis_records_for_insights(
+        product_id=product_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    keyword_data = extract_keywords(records, top_k=top_k)
+    return api_response(
+        {
+            "product_id": product_id,
+            "top_k": top_k,
+            **keyword_data,
+        },
+        message="关键词统计成功",
+    )
+
+
+@app.get("/api/insights/aspects")
+def insight_aspects(
+    product_id: str = Query(default=""),
+    start_time: str = Query(default=""),
+    end_time: str = Query(default=""),
+) -> Dict[str, Any]:
+    records = analysis_records_for_insights(
+        product_id=product_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    aspect_data = score_aspects(records)
+    return api_response(
+        {
+            "product_id": product_id,
+            **aspect_data,
+        },
+        message="维度评分成功",
+    )
+
+
+@app.get("/api/summary/product")
+def product_summary(
+    product_id: str = Query(default=""),
+    top_k: int = Query(default=10, ge=1, le=50),
+    start_time: str = Query(default=""),
+    end_time: str = Query(default=""),
+) -> Dict[str, Any]:
+    records = analysis_records_for_insights(
+        product_id=product_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    keyword_data = extract_keywords(records, top_k=top_k)
+    aspect_data = score_aspects(records)
+    summary = generate_rule_summary(keyword_data, aspect_data)
+    return api_response(
+        {
+            "product_id": product_id,
+            "record_count": len(records),
+            **summary,
+        },
+        message="总结生成成功",
+    )
 
 
 @app.get("/api/export/{task_id}")
