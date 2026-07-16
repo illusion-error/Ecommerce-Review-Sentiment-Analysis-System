@@ -1,29 +1,65 @@
 {
-  "test_info": {
-    "total_samples": 5,
-    "positive_samples": 3,
-    "negative_samples": 2
-  },
-  "metrics": {
-    "accuracy": 0.6,
-    "precision": 0.0,
-    "recall": 0.0,
-    "f1": 0.0,
-    "confusion_matrix": {
-      "tn": 0,
-      "fp": 2,
-      "fn": 0,
-      "tp": 3
+  "timestamp": "2026-07-16 10:14:20",
+  "predictor": "backend.sentiment.predict_sentiment",
+  "mode": "bert_or_rule_fallback",
+  "datasets": [
+    {
+      "name": "processed_test",
+      "path": "C:\\Users\\符启达\\Documents\\Codex\\2026-06-16\\files-mentioned-by-the-user-ai\\Ecommerce-Review-Sentiment-Analysis-System\\data\\processed\\test.csv",
+      "total_samples": 5,
+      "positive_samples": 3,
+      "negative_samples": 2,
+      "skipped_samples": 0,
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "confusion_matrix": {
+          "tn": 2,
+          "fp": 0,
+          "fn": 0,
+          "tp": 3
+        }
+      },
+      "performance": {
+        "avg_ms": 1.09,
+        "min_ms": 0.68,
+        "max_ms": 2.39,
+        "p95_ms": 2.39,
+        "total_seconds": 0.0054,
+        "throughput_per_sec": 919.81
+      },
+      "avg_confidence": 0.89
+    },
+    {
+      "name": "demo_comments",
+      "path": "C:\\Users\\符启达\\Documents\\Codex\\2026-06-16\\files-mentioned-by-the-user-ai\\Ecommerce-Review-Sentiment-Analysis-System\\data\\demo\\demo_comments.csv",
+      "total_samples": 35,
+      "positive_samples": 19,
+      "negative_samples": 16,
+      "skipped_samples": 1,
+      "metrics": {
+        "accuracy": 0.9429,
+        "precision": 0.9048,
+        "recall": 1.0,
+        "f1": 0.95,
+        "confusion_matrix": {
+          "tn": 14,
+          "fp": 2,
+          "fn": 0,
+          "tp": 19
+        }
+      },
+      "performance": {
+        "avg_ms": 0.78,
+        "min_ms": 0.67,
+        "max_ms": 0.98,
+        "p95_ms": 0.97,
+        "total_seconds": 0.0273,
+        "throughput_per_sec": 1283.63
+      },
+      "avg_confidence": 0.7411
     }
-  },
-  "performance": {
-    "avg_ms": 164.16,
-    "min_ms": 50.44,
-    "max_ms": 612.58,
-    "p95_ms": 612.58,
-    "p99_ms": 612.58,
-    "total_seconds": 0.82,
-    "throughput_per_sec": 6.09
-  },
-  "timestamp": "2026-07-14 10:32:23"
+  ]
 }

@@ -171,33 +171,65 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-// 把里面的 Lightbulb 改成 Star
 import { DataAnalysis, Cpu, Trophy, Warning, Star, Search, VideoPlay } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import 'echarts-wordcloud'
 import axios from 'axios'
 
-// --- 状态变量 ---
 const activeTab = ref('dashboard')
 const inputText = ref('')
 const loadingSingle = ref(false)
 const resultSingle = ref(null)
 
-// --- 图表与洞察数据变量 ---
-const statsData = ref({ positive: 0, negative: 0, intensity: [0,0,0,0,0] })
+const statsData = ref({ positive: 0, negative: 0, intensity: [0, 0, 0, 0, 0] })
 const summaryData = ref(null)
 const radarAspects = ref([])
 const posWords = ref([])
 const negWords = ref([])
 
-let pieChart, barChart, radarChart, posWordCloud, negWordCloud = null
+const historyData = ref([])
+const historyPage = ref(1)
+const historyPageSize = ref(10)
+const historyTotal = ref(0)
+const filterSentiment = ref('')
+const filterTime = ref([])
 
-// ================== 生命周期与数据拉取 ==================
+let pieChart, barChart, radarChart, posWordCloud, negWordCloud
+
 onMounted(async () => {
   await fetchAllDashboardData()
   await fetchHistory()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', resizeCharts)
+  disposeCharts()
+})
+
+const safeNumber = (value, fallback = 0) => {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : fallback
+}
+
+const settledData = (result) => {
+  if (result.status !== 'fulfilled') return null
+  const payload = result.value?.data
+  return payload?.success ? payload.data : null
+}
+
+const mapWordCloudData = (items = []) => {
+  return items
+    .filter(item => item?.word && safeNumber(item.count) > 0)
+    .map(item => ({ name: item.word, value: safeNumber(item.count) }))
+}
+
+const emptySummary = () => ({
+  mode: 'rule_fallback',
+  advantages: ['当前历史评论较少，暂未形成稳定优点。'],
+  disadvantages: ['当前负向证据不足，暂未发现集中槽点。'],
+  buying_advice: '请先完成单条或批量评论分析，再查看更完整的商品洞察。'
 })
 
 const fetchAllDashboardData = async () => {
@@ -208,41 +240,58 @@ const fetchAllDashboardData = async () => {
       axios.get('/api/insights/aspects'),
       axios.get('/api/insights/keywords')
     ])
-    
-    // 省略判断逻辑，强行使用本地华丽预览数据展示 UI！
-    throw new Error("Force Mock UI") 
-  } catch (error) {
-    console.log('启用高级大屏演示模式')
-    
-    // 强制塞入企业级演示数据
-    statsData.value = { positive: 8520, negative: 1245, intensity: [120, 350, 980, 4200, 4115] }
-    summaryData.value = {
-      mode: 'llm_powered',
-      advantages: ['物流体验极佳，超过 95% 的用户在次日收到包裹', '产品材质与商品详情页描述高度一致，无色差', '客服响应迅速，售后处理态度受到好评'],
-      disadvantages: ['约 8% 的用户反馈外包装在运输途中有轻微变形', '少数用户认为赠品的实用性有待提高'],
-      buying_advice: '本产品在【物流】与【质量】维度表现处于行业领先水平。如果急需使用且看重品质，强烈建议购入；对包装极其挑剔的用户建议联系客服加固。'
+
+    const statData = settledData(statRes) || {}
+    const summary = settledData(sumRes)
+    const aspectData = settledData(aspectRes) || {}
+    const keywordData = settledData(kwRes) || {}
+
+    statsData.value = {
+      positive: safeNumber(statData.positive_count),
+      negative: safeNumber(statData.negative_count),
+      intensity: Array.isArray(statData.intensity_distribution)
+        ? statData.intensity_distribution.map(item => safeNumber(item))
+        : [0, 0, 0, 0, 0]
     }
-    radarAspects.value = [ { name: '价格敏感度', score: 82 }, { name: '物流时效性', score: 96 }, { name: '质量满意度', score: 89 }, { name: '服务态度', score: 92 }, { name: '复购意愿', score: 78 } ]
-    
-    posWords.value = [
-      { name: '顺丰包邮', value: 3200 }, { name: '做工精致', value: 2950 }, { name: '正品保证', value: 2800 }, 
-      { name: '物超所值', value: 2650 }, { name: '颜值高', value: 2500 }, { name: '客服耐心', value: 2100 },
-      { name: '极速发货', value: 1900 }, { name: '手感好', value: 1800 }, { name: '推荐购买', value: 1600 }
-    ]
-    negWords.value = [
-      { name: '包装简陋', value: 850 }, { name: '略有溢价', value: 720 }, { name: '快递柜太远', value: 650 }, 
-      { name: '尺寸偏小', value: 500 }, { name: '色差', value: 450 }, { name: '没送电池', value: 300 }
-    ]
-    
-    if (activeTab.value === 'dashboard') initCharts()
+    summaryData.value = summary || emptySummary()
+    radarAspects.value = Array.isArray(aspectData.aspects)
+      ? aspectData.aspects.map(item => ({ name: item.name, score: safeNumber(item.score) }))
+      : [
+          { name: '价格', score: 0 },
+          { name: '物流', score: 0 },
+          { name: '质量', score: 0 }
+        ]
+    posWords.value = mapWordCloudData(keywordData.positive_words)
+    negWords.value = mapWordCloudData(keywordData.negative_words)
+
+    if (!safeNumber(statData.total) && !posWords.value.length && !negWords.value.length) {
+      ElMessage.info('暂无历史评论数据，请先完成单条或批量分析')
+    }
+
+    if (activeTab.value === 'dashboard') {
+      await nextTick()
+      initCharts()
+    }
+  } catch (error) {
+    console.error(error)
+    summaryData.value = emptySummary()
+    ElMessage.error('看板数据加载失败，请检查后端服务')
+    if (activeTab.value === 'dashboard') {
+      await nextTick()
+      initCharts()
+    }
   }
 }
 
-// ================== ECharts 高级配色渲染 ==================
+const disposeCharts = () => {
+  ;[pieChart, barChart, radarChart, posWordCloud, negWordCloud].forEach(chart => chart?.dispose())
+  pieChart = barChart = radarChart = posWordCloud = negWordCloud = null
+}
+
+const wordCloudFallback = (text) => [{ name: text, value: 1, textStyle: { color: '#c0c4cc' } }]
+
 const initCharts = () => {
-  const chartOpts = {
-    color: ['#00F2FE', '#4FACFE', '#38F9D7', '#43E97B', '#FA709A'] // 赛博朋克渐变色盘
-  }
+  disposeCharts()
 
   if (document.getElementById('pieChart')) {
     pieChart = echarts.init(document.getElementById('pieChart'))
@@ -279,13 +328,17 @@ const initCharts = () => {
   }
 
   if (document.getElementById('radarChart')) {
+    const radarItems = radarAspects.value.length ? radarAspects.value : [
+      { name: '价格', score: 0 },
+      { name: '物流', score: 0 },
+      { name: '质量', score: 0 }
+    ]
     radarChart = echarts.init(document.getElementById('radarChart'))
-    const indicator = radarAspects.value.map(item => ({ name: item.name, max: 100 }))
     radarChart.setOption({
-      radar: { indicator: indicator, radius: '60%', splitArea: { show: false }, splitLine: { lineStyle: { color: '#e4e7ed' } } },
+      radar: { indicator: radarItems.map(item => ({ name: item.name, max: 100 })), radius: '60%', splitArea: { show: false }, splitLine: { lineStyle: { color: '#e4e7ed' } } },
       series: [{
         type: 'radar',
-        data: [{ value: radarAspects.value.map(i=>i.score), name: '口碑评分' }],
+        data: [{ value: radarItems.map(item => item.score), name: '口碑评分' }],
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(79, 172, 254, 0.6)'}, {offset: 1, color: 'rgba(0, 242, 254, 0.1)'}]) },
         itemStyle: { color: '#4FACFE', borderColor: '#4FACFE', borderWidth: 2 },
         lineStyle: { width: 3 }
@@ -297,9 +350,9 @@ const initCharts = () => {
     posWordCloud = echarts.init(document.getElementById('posWordCloud'))
     posWordCloud.setOption({
       series: [{
-        type: 'wordCloud', shape: 'circle', gridSize: 8, sizeRange: [16, 60], rotationRange: [0, 0], // 不旋转更商务
+        type: 'wordCloud', shape: 'circle', gridSize: 8, sizeRange: [16, 60], rotationRange: [0, 0],
         textStyle: { color: () => 'rgb(' + [Math.round(Math.random() * 50), Math.round(Math.random() * 155 + 100), Math.round(Math.random() * 100)].join(',') + ')' },
-        data: posWords.value
+        data: posWords.value.length ? posWords.value : wordCloudFallback('暂无正向词')
       }]
     })
   }
@@ -310,36 +363,89 @@ const initCharts = () => {
       series: [{
         type: 'wordCloud', shape: 'circle', gridSize: 8, sizeRange: [16, 60], rotationRange: [0, 0],
         textStyle: { color: () => 'rgb(' + [Math.round(Math.random() * 105 + 150), Math.round(Math.random() * 50), Math.round(Math.random() * 50)].join(',') + ')' },
-        data: negWords.value
+        data: negWords.value.length ? negWords.value : wordCloudFallback('暂无负向词')
       }]
     })
   }
 }
 
-// --- 其它保留功能 ---
-const handleAnalyzeSingle = () => {
-  loadingSingle.value = true;
-  setTimeout(() => {
-    loadingSingle.value = false;
-    resultSingle.value = { sentiment: 'positive', confidence: 0.985, strength: 9.8 }
-    ElMessage.success('BERT 推理完成，耗时 124ms')
-  }, 800)
+const handleAnalyzeSingle = async () => {
+  const text = inputText.value.trim()
+  if (!text) {
+    ElMessage.warning('请输入评论文本')
+    return
+  }
+  loadingSingle.value = true
+  try {
+    const response = await axios.post('/api/sentiment/single', {
+      text,
+      product_id: 'web-single'
+    })
+    resultSingle.value = response.data.data
+    ElMessage.success(`推理完成，情感结果：${resultSingle.value.sentiment}`)
+    await fetchAllDashboardData()
+    await fetchHistory()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('单条分析失败，请检查后端服务')
+  } finally {
+    loadingSingle.value = false
+  }
 }
 
-const historyData = ref([
-  { id: 1001, raw_text: "做工精美，超出预期！", sentiment: "positive", strength: 9.5 },
-  { id: 1002, raw_text: "包装有点压扁了", sentiment: "negative", strength: 3.2 }
-])
-const historyPage = ref(1); const historyPageSize = ref(10); const historyTotal = ref(2);
-const filterSentiment = ref(''); const filterTime = ref([]);
-const handleSearch = () => { ElMessage.info("正在执行大数据检索...") }
-const handlePageChange = () => {}
-const showDetail = (row) => { ElMessage.info(`查看记录 ${row.id} 的数据流`) }
-const handleTabClick = (pane) => { if (pane.props.name === 'dashboard') { nextTick(() => { initCharts() }) } }
+const fetchHistory = async () => {
+  try {
+    const params = {
+      page: historyPage.value,
+      page_size: historyPageSize.value
+    }
+    if (filterSentiment.value) params.sentiment = filterSentiment.value
+    if (Array.isArray(filterTime.value) && filterTime.value.length === 2) {
+      params.start_time = filterTime.value[0]
+      params.end_time = filterTime.value[1]
+    }
+    const response = await axios.get('/api/history', { params })
+    const data = response.data.data || {}
+    historyData.value = data.items || []
+    historyTotal.value = safeNumber(data.total)
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('历史记录加载失败')
+  }
+}
 
-window.addEventListener('resize', () => {
-  pieChart?.resize(); barChart?.resize(); radarChart?.resize(); posWordCloud?.resize(); negWordCloud?.resize();
-})
+const handleSearch = async () => {
+  historyPage.value = 1
+  await fetchHistory()
+}
+
+const handlePageChange = async (page) => {
+  historyPage.value = page
+  await fetchHistory()
+}
+
+const showDetail = (row) => {
+  ElMessage.info(`记录 ${row.id}：${row.raw_text}`)
+}
+
+const handleTabClick = (pane) => {
+  if (pane.props.name === 'dashboard') {
+    nextTick(() => { initCharts() })
+  }
+  if (pane.props.name === 'history') {
+    fetchHistory()
+  }
+}
+
+const resizeCharts = () => {
+  pieChart?.resize()
+  barChart?.resize()
+  radarChart?.resize()
+  posWordCloud?.resize()
+  negWordCloud?.resize()
+}
+
+window.addEventListener('resize', resizeCharts)
 </script>
 
 <style>

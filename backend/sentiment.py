@@ -25,6 +25,17 @@ POSITIVE_WORDS = {
     "正品",
     "划算",
     "值得",
+    "实惠",
+    "合理",
+    "回购",
+    "物有所值",
+    "完好",
+    "及时",
+    "严实",
+    "扎实",
+    "稳定",
+    "可靠",
+    "还可以",
     "beautiful",
     "good",
     "great",
@@ -38,11 +49,24 @@ NEGATIVE_WORDS = {
     "慢",
     "难用",
     "破损",
+    "破了",
     "退货",
     "不好",
     "一般",
     "假货",
     "糟糕",
+    "坏",
+    "有问题",
+    "没人理",
+    "堪忧",
+    "粗糙",
+    "不推荐",
+    "太贵",
+    "偏贵",
+    "不值",
+    "不划算",
+    "买亏",
+    "不高",
     "bad",
     "poor",
 }
@@ -62,8 +86,8 @@ def _rule_based_predict(text: str) -> Dict[str, Any]:
 
     clean = clean_text(text)
     lower = clean.lower()
-    positive_hits = sum(1 for word in POSITIVE_WORDS if word in clean or word in lower)
-    negative_hits = sum(1 for word in NEGATIVE_WORDS if word in clean or word in lower)
+    positive_hits = sum(2 if len(word) >= 3 else 1 for word in POSITIVE_WORDS if word in clean or word in lower)
+    negative_hits = sum(2 if len(word) >= 3 else 1 for word in NEGATIVE_WORDS if word in clean or word in lower)
     score = positive_hits - negative_hits
     if score >= 0:
         label = 1
@@ -109,4 +133,3 @@ def predict_sentiment(text: str) -> Dict[str, Any]:
         }
     except Exception:
         return _rule_based_predict(text)
-

@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r /app/backend/requirements-api.txt
 COPY backend /app/backend
 COPY model /app/model
 COPY tests /app/tests
+COPY pytest.ini /app/pytest.ini
 
 EXPOSE 8000
 
