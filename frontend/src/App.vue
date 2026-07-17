@@ -44,7 +44,6 @@
               </el-col>
               <el-col :span="8">
                 <div class="insight-box advice-box">
-                  <!-- 把 <Lightbulb /> 改成 <Star /> -->
                   <h4><el-icon><Star /></el-icon> 购买建议</h4>
                   <p>{{ summaryData.buying_advice }}</p>
                 </div>
@@ -95,7 +94,7 @@
         <el-tab-pane label="🤖 实时推理沙箱" name="single">
           <div class="sandbox-container">
             <el-card class="glass-card input-card" shadow="never">
-              <h3 style="margin-top:0;">输入单条文本进行情感预测</h3>
+              <h3 style="margin-top:0; color:#f8fafc;">输入单条文本进行情感预测</h3>
               <el-input v-model="inputText" type="textarea" :rows="5" resize="none" placeholder="输入你想测试的商品评论，感受 BERT 模型的威力..." />
               <div style="margin-top: 20px; text-align: right;">
                 <el-button type="primary" size="large" round :loading="loadingSingle" @click="handleAnalyzeSingle">
@@ -106,7 +105,7 @@
 
             <transition name="fade-slide">
               <el-card v-if="resultSingle" class="glass-card result-card" shadow="always" style="margin-top: 20px;">
-                <template #header><strong style="font-size: 18px;">推理结果</strong></template>
+                <template #header><strong style="font-size: 18px; color:#f8fafc;">推理结果</strong></template>
                 <div class="result-grid">
                   <div class="result-item">
                     <span class="label">情感极性</span>
@@ -120,7 +119,7 @@
                   </div>
                   <div class="result-item">
                     <span class="label">情绪强度 (Intensity)</span>
-                    <span class="value number">{{ resultSingle.strength }}<span style="font-size:14px;color:#999;">/10</span></span>
+                    <span class="value number">{{ resultSingle.strength }}<span style="font-size:14px;color:#94a3b8;">/10</span></span>
                   </div>
                 </div>
               </el-card>
@@ -142,7 +141,7 @@
               </el-button>
             </div>
 
-            <el-table :data="historyData" style="width: 100%; border-radius: 8px; overflow: hidden;" :header-cell-style="{ background: '#f5f7fa', color: '#333', fontWeight: 'bold' }">
+            <el-table :data="historyData" style="width: 100%; border-radius: 8px; overflow: hidden; margin-top:15px;" class="dark-table">
               <el-table-column prop="id" label="标识 ID" width="100" align="center" />
               <el-table-column prop="raw_text" label="原始数据 (Raw Text)" show-overflow-tooltip />
               <el-table-column prop="sentiment" label="分析极性" width="120" align="center">
@@ -165,15 +164,57 @@
             </div>
           </el-card>
         </el-tab-pane>
+
+        <!-- ================= 模块 4：批量上传 (放在最后) ================= -->
+        <el-tab-pane label="📁 批量处理中心" name="batch">
+          <el-card class="glass-card" shadow="never">
+            <h3 style="margin-top:0; color:#f8fafc; text-align:center;">上传数据集进行批量分析</h3>
+            <el-upload class="upload-demo" drag action="#" :auto-upload="false" :on-change="handleMockUpload" accept=".csv, .xlsx">
+              <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+              <div class="el-upload__text" style="color:#cbd5e1;">将文件拖到此处，或 <em style="color:#00f2fe;">点击上传</em></div>
+              <template #tip><div class="el-upload__tip" style="text-align:center; color:#94a3b8;">支持 .csv 或 .xlsx 文件</div></template>
+            </el-upload>
+          </el-card>
+
+          <el-card v-if="batchResult" class="glass-card" shadow="never" style="margin-top: 20px;" v-loading="loadingBatch">
+            <template #header><strong style="color:#f8fafc;">批量分析总结</strong></template>
+            <el-descriptions border :column="3" class="dark-desc">
+              <el-descriptions-item label="总记录数">{{ batchResult.total }}</el-descriptions-item>
+              <el-descriptions-item label="正向数量"><el-tag type="success">{{ batchResult.positive_count }}</el-tag></el-descriptions-item>
+              <el-descriptions-item label="负向数量"><el-tag type="danger">{{ batchResult.negative_count }}</el-tag></el-descriptions-item>
+            </el-descriptions>
+            <div style="margin-top: 20px; text-align: center;">
+              <el-button type="success" round @click="handleDownload">下载详细分析报告 (CSV)</el-button>
+            </div>
+          </el-card>
+        </el-tab-pane>
+
       </el-tabs>
     </div>
+
+    <!-- 弹窗 -->
+    <el-dialog v-model="detailVisible" title="分析详情" width="500px" custom-class="dark-dialog">
+      <div style="line-height: 1.8; color: #1e293b;">
+        <p><strong>原始文本：</strong> {{ currentDetail.raw_text }}</p>
+        <p><strong>清洗文本：</strong> {{ currentDetail.clean_text || '暂无数据' }}</p>
+        <p><strong>情感倾向：</strong> 
+          <el-tag :type="currentDetail.sentiment === 'positive' ? 'success' : 'danger'">
+            {{ currentDetail.sentiment === 'positive' ? '正向' : '负向' }}
+          </el-tag>
+        </p>
+        <p><strong>置信度：</strong> {{ currentDetail.confidence ? (currentDetail.confidence * 100).toFixed(2) + '%' : '暂无数据' }}</p>
+        <p><strong>情感强度：</strong> {{ currentDetail.strength }} 分</p>
+        <p><strong>分析时间：</strong> {{ currentDetail.created_at || currentDetail.time }}</p>
+      </div>
+      <template #footer><el-button @click="detailVisible = false">关闭</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Cpu, Trophy, Warning, Star, Search, VideoPlay } from '@element-plus/icons-vue'
+import { DataAnalysis, Cpu, Trophy, Warning, Star, Search, VideoPlay, UploadFilled } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import 'echarts-wordcloud'
 import axios from 'axios'
@@ -182,6 +223,8 @@ const activeTab = ref('dashboard')
 const inputText = ref('')
 const loadingSingle = ref(false)
 const resultSingle = ref(null)
+const loadingBatch = ref(false)
+const batchResult = ref(null)
 
 const statsData = ref({ positive: 0, negative: 0, intensity: [0, 0, 0, 0, 0] })
 const summaryData = ref(null)
@@ -197,6 +240,9 @@ const filterSentiment = ref('')
 const filterTime = ref([])
 
 let pieChart, barChart, radarChart, posWordCloud, negWordCloud
+
+const detailVisible = ref(false)
+const currentDetail = ref({})
 
 onMounted(async () => {
   await fetchAllDashboardData()
@@ -288,19 +334,21 @@ const disposeCharts = () => {
   pieChart = barChart = radarChart = posWordCloud = negWordCloud = null
 }
 
-const wordCloudFallback = (text) => [{ name: text, value: 1, textStyle: { color: '#c0c4cc' } }]
+const wordCloudFallback = (text) => [{ name: text, value: 1, textStyle: { color: '#475569' } }]
 
+/* ================= 重点：ECharts 暗黑模式改造 ================= */
 const initCharts = () => {
   disposeCharts()
 
   if (document.getElementById('pieChart')) {
-    pieChart = echarts.init(document.getElementById('pieChart'))
+    pieChart = echarts.init(document.getElementById('pieChart'), 'dark') // 开启暗黑
     pieChart.setOption({
-      tooltip: { trigger: 'item', backgroundColor: 'rgba(255,255,255,0.9)' },
-      legend: { bottom: '5%', icon: 'circle' },
+      backgroundColor: 'transparent', // 强制透明背景
+      tooltip: { trigger: 'item', backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', textStyle: {color: '#fff'} },
+      legend: { bottom: '5%', icon: 'circle', textStyle: { color: '#cbd5e1' } },
       series: [{
         type: 'pie', radius: ['50%', '75%'], center: ['50%', '45%'],
-        itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderRadius: 10, borderColor: 'rgba(30,41,59,0.5)', borderWidth: 2 },
         label: { show: false },
         data: [
           { value: statsData.value.positive, name: '正向 (Positive)', itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: '#43E97B'}, {offset: 1, color: '#38F9D7'}]) } },
@@ -311,12 +359,13 @@ const initCharts = () => {
   }
 
   if (document.getElementById('barChart')) {
-    barChart = echarts.init(document.getElementById('barChart'))
+    barChart = echarts.init(document.getElementById('barChart'), 'dark')
     barChart.setOption({
-      tooltip: { trigger: 'axis' },
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', textStyle: {color: '#fff'} },
       grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
-      xAxis: { type: 'category', data: ['极度不满(0-2)', '偏负向(2-4)', '中立(4-6)', '偏正向(6-8)', '极度满意(8-10)'], axisLine: { lineStyle: { color: '#ccc' } } },
-      yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } },
+      xAxis: { type: 'category', data: ['极度不满(0-2)', '偏负向(2-4)', '中立(4-6)', '偏正向(6-8)', '极度满意(8-10)'], axisLine: { lineStyle: { color: '#64748b' } } },
+      yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed', color: 'rgba(255,255,255,0.1)' } } },
       series: [{
         data: statsData.value.intensity, type: 'bar', barWidth: '40%',
         itemStyle: {
@@ -329,26 +378,27 @@ const initCharts = () => {
 
   if (document.getElementById('radarChart')) {
     const radarItems = radarAspects.value.length ? radarAspects.value : [
-      { name: '价格', score: 0 },
-      { name: '物流', score: 0 },
-      { name: '质量', score: 0 }
+      { name: '价格', score: 0 }, { name: '物流', score: 0 }, { name: '质量', score: 0 }
     ]
-    radarChart = echarts.init(document.getElementById('radarChart'))
+    radarChart = echarts.init(document.getElementById('radarChart'), 'dark')
     radarChart.setOption({
-      radar: { indicator: radarItems.map(item => ({ name: item.name, max: 100 })), radius: '60%', splitArea: { show: false }, splitLine: { lineStyle: { color: '#e4e7ed' } } },
+      backgroundColor: 'transparent',
+      tooltip: { backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', textStyle: {color: '#fff'} },
+      radar: { indicator: radarItems.map(item => ({ name: item.name, max: 100 })), radius: '60%', splitArea: { show: false }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.2)' } } },
       series: [{
         type: 'radar',
         data: [{ value: radarItems.map(item => item.score), name: '口碑评分' }],
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(79, 172, 254, 0.6)'}, {offset: 1, color: 'rgba(0, 242, 254, 0.1)'}]) },
-        itemStyle: { color: '#4FACFE', borderColor: '#4FACFE', borderWidth: 2 },
-        lineStyle: { width: 3 }
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(0, 242, 254, 0.4)'}, {offset: 1, color: 'rgba(0, 242, 254, 0.1)'}]) },
+        itemStyle: { color: '#00f2fe', borderColor: '#00f2fe', borderWidth: 2 },
+        lineStyle: { width: 3, color: '#00f2fe' }
       }]
     })
   }
 
   if (document.getElementById('posWordCloud')) {
-    posWordCloud = echarts.init(document.getElementById('posWordCloud'))
+    posWordCloud = echarts.init(document.getElementById('posWordCloud')) // 词云本身不需要暗黑模式配置，背景设透明即可
     posWordCloud.setOption({
+      backgroundColor: 'transparent',
       series: [{
         type: 'wordCloud', shape: 'circle', gridSize: 8, sizeRange: [16, 60], rotationRange: [0, 0],
         textStyle: { color: () => 'rgb(' + [Math.round(Math.random() * 50), Math.round(Math.random() * 155 + 100), Math.round(Math.random() * 100)].join(',') + ')' },
@@ -360,6 +410,7 @@ const initCharts = () => {
   if (document.getElementById('negWordCloud')) {
     negWordCloud = echarts.init(document.getElementById('negWordCloud'))
     negWordCloud.setOption({
+      backgroundColor: 'transparent',
       series: [{
         type: 'wordCloud', shape: 'circle', gridSize: 8, sizeRange: [16, 60], rotationRange: [0, 0],
         textStyle: { color: () => 'rgb(' + [Math.round(Math.random() * 105 + 150), Math.round(Math.random() * 50), Math.round(Math.random() * 50)].join(',') + ')' },
@@ -369,36 +420,49 @@ const initCharts = () => {
   }
 }
 
+// ================== 其余逻辑接口调用 (保持原样) ==================
 const handleAnalyzeSingle = async () => {
   const text = inputText.value.trim()
-  if (!text) {
-    ElMessage.warning('请输入评论文本')
-    return
-  }
+  if (!text) { ElMessage.warning('请输入评论文本'); return }
   loadingSingle.value = true
   try {
-    const response = await axios.post('/api/sentiment/single', {
-      text,
-      product_id: 'web-single'
-    })
+    const response = await axios.post('/api/sentiment/single', { text, product_id: 'web-single' })
     resultSingle.value = response.data.data
     ElMessage.success(`推理完成，情感结果：${resultSingle.value.sentiment}`)
     await fetchAllDashboardData()
     await fetchHistory()
   } catch (error) {
-    console.error(error)
-    ElMessage.error('单条分析失败，请检查后端服务')
+    console.error(error); ElMessage.error('单条分析失败，请检查后端服务')
   } finally {
     loadingSingle.value = false
   }
 }
 
+const handleMockUpload = async (file) => {
+  loadingBatch.value = true
+  const formData = new FormData()
+  formData.append('file', file.raw)
+  try {
+    const res = await axios.post('/api/sentiment/batch', formData)
+    if (res.data.success) {
+      batchResult.value = res.data.data
+      ElMessage.success('批量分析成功')
+      await fetchAllDashboardData() 
+      await fetchHistory()
+    }
+  } catch (e) { ElMessage.error('批量接口联调失败') } 
+  finally { loadingBatch.value = false }
+}
+
+const handleDownload = () => {
+  if (!batchResult.value || !batchResult.value.task_id) return
+  window.open(`/api/export/${batchResult.value.task_id}`)
+  ElMessage.success('正在下载报告...')
+}
+
 const fetchHistory = async () => {
   try {
-    const params = {
-      page: historyPage.value,
-      page_size: historyPageSize.value
-    }
+    const params = { page: historyPage.value, page_size: historyPageSize.value }
     if (filterSentiment.value) params.sentiment = filterSentiment.value
     if (Array.isArray(filterTime.value) && filterTime.value.length === 2) {
       params.start_time = filterTime.value[0]
@@ -409,160 +473,166 @@ const fetchHistory = async () => {
     historyData.value = data.items || []
     historyTotal.value = safeNumber(data.total)
   } catch (error) {
-    console.error(error)
-    ElMessage.error('历史记录加载失败')
+    console.error(error); ElMessage.error('历史记录加载失败')
   }
 }
 
-const handleSearch = async () => {
-  historyPage.value = 1
-  await fetchHistory()
-}
-
-const handlePageChange = async (page) => {
-  historyPage.value = page
-  await fetchHistory()
-}
-
-const showDetail = (row) => {
-  ElMessage.info(`记录 ${row.id}：${row.raw_text}`)
-}
+const handleSearch = async () => { historyPage.value = 1; await fetchHistory() }
+const handlePageChange = async (page) => { historyPage.value = page; await fetchHistory() }
+const showDetail = (row) => { currentDetail.value = row; detailVisible.value = true }
 
 const handleTabClick = (pane) => {
-  if (pane.props.name === 'dashboard') {
-    nextTick(() => { initCharts() })
-  }
-  if (pane.props.name === 'history') {
-    fetchHistory()
-  }
+  if (pane.props.name === 'dashboard') { nextTick(() => { initCharts() }) }
+  if (pane.props.name === 'history') { fetchHistory() }
 }
 
 const resizeCharts = () => {
-  pieChart?.resize()
-  barChart?.resize()
-  radarChart?.resize()
-  posWordCloud?.resize()
-  negWordCloud?.resize()
+  pieChart?.resize(); barChart?.resize(); radarChart?.resize(); posWordCloud?.resize(); negWordCloud?.resize();
 }
 
 window.addEventListener('resize', resizeCharts)
 </script>
 
 <style>
-/* ================== 全局重置与高级科技风 UI ================== */
+/* ================== 赛博深渊暗黑风 + 全息毛玻璃 UI ================== */
 body {
-  background-color: #f0f2f5;
+  /* 极具深度的暗夜蓝紫渐变背景 */
+  background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 50%, #020617 100%);
   margin: 0;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', Arial, sans-serif;
+  color: #f8fafc;
 }
-.app-container {
-  padding: 30px;
-  max-width: 1300px;
-  margin: 0 auto;
-}
+.app-container { padding: 30px; max-width: 1300px; margin: 0 auto; }
 
-/* Header 设计 */
-.app-header {
-  text-align: center;
-  margin-bottom: 40px;
-}
-.logo-box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 15px;
-}
-.logo-icon {
-  font-size: 36px;
-  color: #409EFF;
-}
+/* 炫酷渐变标题 */
+.app-header { text-align: center; margin-bottom: 40px; }
+.logo-box { display: flex; align-items: center; justify-content: center; gap: 15px; }
+.logo-icon { font-size: 36px; color: #00f2fe; filter: drop-shadow(0 0 8px rgba(0,242,254,0.6)); }
 .gradient-text {
-  font-size: 32px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #1f2b45, #409EFF);
-  -webkit-background-clip: text;
-  color: transparent;
-  margin: 0;
+  font-size: 32px; font-weight: 800; margin: 0;
+  background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+  -webkit-background-clip: text; color: transparent;
+  letter-spacing: 2px;
 }
 .version-tag {
-  font-size: 14px;
-  background: #1f2b45;
-  color: #fff;
-  padding: 4px 10px;
-  border-radius: 20px;
-  vertical-align: middle;
+  font-size: 13px; background: rgba(0, 242, 254, 0.1); color: #00f2fe;
+  border: 1px solid rgba(0, 242, 254, 0.3); padding: 4px 10px; border-radius: 20px; vertical-align: middle;
 }
-.subtitle {
-  color: #909399;
-  letter-spacing: 1px;
-  margin-top: 10px;
-}
+.subtitle { color: #94a3b8; letter-spacing: 1px; margin-top: 10px; }
 
-/* 导航 Tabs 毛玻璃重构 */
+/* 导航 Tabs 暗黑悬浮态 */
 .modern-tabs > .el-tabs__header {
-  border-bottom: none;
-  background: rgba(255,255,255,0.7);
-  backdrop-filter: blur(10px);
-  padding: 10px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px);
+  padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);
 }
-.modern-tabs > .el-tabs__header .el-tabs__nav {
-  border: none !important;
-}
+.modern-tabs > .el-tabs__header .el-tabs__nav { border: none !important; }
 .modern-tabs > .el-tabs__header .el-tabs__item {
-  border: none !important;
-  font-size: 16px;
-  font-weight: 600;
-  color: #606266;
-  border-radius: 8px;
-  margin: 0 5px;
-  transition: all 0.3s;
+  border: none !important; font-size: 16px; font-weight: 600; color: #94a3b8;
+  border-radius: 8px; margin: 0 5px; transition: all 0.3s;
 }
 .modern-tabs > .el-tabs__header .el-tabs__item.is-active {
-  background: #409EFF;
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(64,158,255,0.4);
+  background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%); color: #fff;
+  box-shadow: 0 4px 15px rgba(0, 242, 254, 0.4);
 }
+/* 去掉底部的默认蓝线 */
+.modern-tabs > .el-tabs__header .el-tabs__active-bar { display: none; }
+.modern-tabs { background: transparent !important; border: none !important; }
+.modern-tabs > .el-tabs__content { padding: 20px 0 !important; }
 
-/* 毛玻璃高级卡片 */
+/* 核心：暗黑全息毛玻璃卡片 */
 .glass-card {
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 8px 24px rgba(149, 157, 165, 0.1);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  background: rgba(30, 41, 59, 0.5) !important; /* 半透明暗板 */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
 .glass-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 12px 32px rgba(149, 157, 165, 0.2);
+  border-color: rgba(0, 242, 254, 0.3) !important;
+  box-shadow: 0 12px 40px rgba(0, 242, 254, 0.15);
 }
 
-/* 智能总结面板 */
-.ai-card { border-left: 6px solid #409EFF; margin-bottom: 24px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; }
-.ai-title { font-size: 18px; color: #1f2b45; display: flex; align-items: center; gap: 8px; }
-.insight-box h4 { margin-top: 0; display: flex; align-items: center; gap: 6px; font-size: 16px; }
-.positive-box h4 { color: #67C23A; }
-.negative-box h4 { color: #F56C6C; }
-.advice-box h4 { color: #E6A23C; }
-.insight-box ul { padding-left: 20px; color: #606266; line-height: 1.8; }
-.insight-box p { color: #606266; line-height: 1.8; padding-left: 5px; }
+/* 卡片内部文字适配暗黑 */
+.el-card__header { border-bottom: 1px solid rgba(255,255,255,0.05) !important; }
+.chart-title, .ai-title { color: #f8fafc !important; font-size: 16px; letter-spacing: 1px; }
+.ai-card { border-left: 6px solid #00f2fe !important; }
+.insight-box h4 { margin-top: 0; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.positive-box h4 { color: #43e97b; }
+.negative-box h4 { color: #ff0844; }
+.advice-box h4 { color: #f6d365; }
+.insight-box ul { padding-left: 20px; color: #cbd5e1; line-height: 1.8; }
+.insight-box p { color: #cbd5e1; line-height: 1.8; padding-left: 5px; }
+.text-green { color: #43e97b !important; }
+.text-red { color: #ff0844 !important; }
 
-/* 图表区 */
-.chart-row { margin-bottom: 24px; }
-.chart-title { font-size: 16px; color: #303133; }
-.chart-container { height: 320px; }
-.text-green { color: #67C23A !important; }
-.text-red { color: #F56C6C !important; }
+/* 交互区输入框改造 */
+.el-textarea__inner {
+  background: rgba(15, 23, 42, 0.6) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  color: #f8fafc !important;
+  border-radius: 8px;
+}
+.el-textarea__inner:focus { border-color: #00f2fe !important; box-shadow: 0 0 8px rgba(0,242,254,0.3); }
 
-/* 交互卡片 */
-.sandbox-container { max-width: 800px; margin: 0 auto; }
+/* 推理结果面板 */
 .result-grid { display: flex; justify-content: space-around; padding: 20px 0; }
 .result-item { text-align: center; }
-.result-item .label { display: block; color: #909399; margin-bottom: 10px; font-size: 14px; }
-.result-item .value.number { font-size: 28px; font-weight: bold; color: #1f2b45; }
+.result-item .label { display: block; color: #94a3b8; margin-bottom: 10px; font-size: 14px; }
+.result-item .value.number { font-size: 28px; font-weight: bold; color: #00f2fe; }
+
+/* ================== 历史表格白底黑字清晰改造 ================== */
+.filter-bar { display: flex; gap: 15px; margin-bottom: 20px; }
+.dark-table {
+  background-color: #fff !important;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.dark-table th.el-table__cell { 
+  color: #1e293b !important; /* 深黑色表头文字 */
+  background-color: #f1f5f9 !important; /* 浅灰表头背景 */
+  border-bottom: 1px solid #e2e8f0 !important; 
+  font-weight: bold; 
+}
+.dark-table td.el-table__cell { 
+  color: #334155 !important; /* 深黑色正文文字 */
+  background-color: #fff !important;
+  border-bottom: 1px solid #f1f5f9 !important; 
+}
+/* 斑马纹交替色 */
+.dark-table.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell { 
+  background: #f8fafc !important; 
+}
+/* 鼠标悬浮高亮变青色 */
+.dark-table tbody tr:hover > td.el-table__cell {
+  background-color: #e0f2fe !important;
+}
+
+/* ================== 底部分页条白底黑字改造 ================== */
+.el-pagination.is-background .el-pager li:not(.is-disabled).is-active { 
+  background-color: #00f2fe !important; 
+  color: #0f172a !important; 
+  font-weight: bold;
+}
+.el-pagination.is-background .el-pager li { 
+  background-color: #fff !important; 
+  color: #334155 !important; 
+  border: 1px solid #e2e8f0;
+}
+.el-pagination.is-background .btn-next, .el-pagination.is-background .btn-prev { 
+  background-color: #fff !important; 
+  color: #334155 !important; 
+  border: 1px solid #e2e8f0;
+}
+.el-pagination__total, .el-pagination__jump {
+  color: #94a3b8 !important;
+}
+
+/* 图表容器 */
+.chart-row { margin-bottom: 24px; }
+.chart-container { height: 320px; }
 
 /* 动画 */
 .fade-slide-enter-active, .fade-slide-leave-active { transition: all 0.5s ease; }
