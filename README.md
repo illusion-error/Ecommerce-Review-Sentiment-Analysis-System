@@ -125,6 +125,63 @@ http://127.0.0.1:18000/docs
 | `GET` | `/api/insights/aspects` | 查询价格、物流、质量维度评分 |
 | `GET` | `/api/summary/product` | 生成商品优缺点和购买建议 |
 
+## 运行环境
+
+### 推荐环境
+
+项目推荐使用 Docker Compose 运行。Docker 会自动构建前端、后端并启动 MySQL 和 Redis，不需要手动分别安装数据库和缓存服务。
+
+| 环境项 | 推荐版本 | 说明 |
+| --- | --- | --- |
+| 操作系统 | Windows 10/11、macOS 或 Linux | Windows 用户建议使用 Docker Desktop + WSL2 后端 |
+| Docker Desktop | 4.x 及以上 | 用于启动容器和 Docker Compose |
+| Docker Compose | v2.x | Docker Desktop 已内置 |
+| 浏览器 | Chrome、Edge 或 Firefox | 用于访问 Vue 前端页面和 FastAPI 文档 |
+
+Docker 镜像内置运行版本：
+
+| 服务 | 镜像 / 版本 | 作用 |
+| --- | --- | --- |
+| backend | `python:3.11-slim` | 运行 FastAPI 后端 |
+| frontend-build | `node:20-alpine` | 构建 Vue3 前端 |
+| frontend-runtime | `nginx:1.27-alpine` | 托管前端静态文件并代理 `/api` |
+| mysql | `mysql:8.4` | 保存评论、分析记录和批量任务 |
+| redis | `redis:7.4-alpine` | 缓存重复文本预测结果 |
+
+默认端口：
+
+| 服务 | 本机端口 | 容器端口 | 访问方式 |
+| --- | --- | --- | --- |
+| 前端页面 | `15173` | `80` | `http://127.0.0.1:15173` |
+| 后端 API | `18000` | `8000` | `http://127.0.0.1:18000` |
+| MySQL | `3307` | `3306` | 本地数据库调试使用 |
+| Redis | `6380` | `6379` | 本地缓存调试使用 |
+
+### 可选本地开发环境
+
+如果不使用 Docker，也可以前后端分别启动。此方式适合调试代码，但需要自己准备 Python、Node.js、MySQL 和 Redis。
+
+| 环境项 | 推荐版本 | 说明 |
+| --- | --- | --- |
+| Python | 3.10+，推荐 3.11 | 后端 API、数据处理和模型脚本 |
+| Node.js | 20+ | Vue3 / Vite 前端开发 |
+| MySQL | 8.0+ | 生产式持久化数据库 |
+| Redis | 7.0+ | 缓存重复预测结果 |
+| pip / npm | 随 Python、Node.js 安装 | 安装后端和前端依赖 |
+
+后端依赖分为两类：
+
+| 文件 | 使用场景 |
+| --- | --- |
+| `backend/requirements-api.txt` | 轻量 API 运行环境，适合 Docker 和接口演示 |
+| `backend/requirements.txt` | 完整模型开发环境，包含 `torch`、`transformers`、`scikit-learn` 等训练/推理依赖 |
+
+说明：
+
+- 没有 BERT 权重或深度学习依赖时，后端会自动使用规则兜底模型，前端页面和接口仍可完整运行。
+- 需要复现 BERT 模型训练或评估时，再安装完整依赖并准备模型权重。
+- Docker 运行方式不强制要求本机安装 Python、Node.js、MySQL 或 Redis。
+
 ## 快速启动
 
 运行前请先启动 Docker Desktop。
