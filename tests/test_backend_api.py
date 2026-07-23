@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
 from backend.main import app
 
@@ -79,4 +80,16 @@ def test_batch_history_summary_and_export():
 
     exported = client.get(f"/api/export/{task_id}")
     assert exported.status_code == 200
-    assert "raw_text" in exported.text
+    assert exported.content.startswith(b"\xef\xbb\xbf")
+    assert "原始评论" in exported.text
+    assert "情感结果" in exported.text
+    assert "raw_text" not in exported.text
+
+    exported_xlsx = client.get(f"/api/export/{task_id}", params={"file_type": "xlsx"})
+    assert exported_xlsx.status_code == 200
+    workbook = load_workbook(io.BytesIO(exported_xlsx.content))
+    sheet = workbook["情感分析报告"]
+    headers = [cell.value for cell in sheet[1]]
+    assert headers[:5] == ["记录ID", "批量任务ID", "商品ID", "原始评论", "清洗后评论"]
+    assert sheet.freeze_panes == "A2"
+    assert sheet.column_dimensions["D"].width >= 20

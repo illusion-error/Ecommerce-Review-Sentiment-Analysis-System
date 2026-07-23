@@ -184,7 +184,7 @@
               <el-descriptions-item label="负向数量"><el-tag type="danger">{{ batchResult.negative_count }}</el-tag></el-descriptions-item>
             </el-descriptions>
             <div style="margin-top: 20px; text-align: center;">
-              <el-button type="success" round @click="handleDownload">下载详细分析报告 (CSV)</el-button>
+              <el-button type="success" round @click="handleDownload">下载详细分析报告 (Excel)</el-button>
             </div>
           </el-card>
         </el-tab-pane>
@@ -456,7 +456,7 @@ const handleMockUpload = async (file) => {
 
 const handleDownload = () => {
   if (!batchResult.value || !batchResult.value.task_id) return
-  window.open(`/api/export/${batchResult.value.task_id}`)
+  window.open(`/api/export/${batchResult.value.task_id}?file_type=xlsx`)
   ElMessage.success('正在下载报告...')
 }
 

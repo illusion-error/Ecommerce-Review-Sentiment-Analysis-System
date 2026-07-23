@@ -7,6 +7,7 @@ import io
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
+from urllib.parse import quote
 
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -54,6 +55,108 @@ init_db()
 
 def api_response(data: Any = None, message: str = "ok", code: int = 0, success: bool = True) -> Dict[str, Any]:
     return {"success": success, "message": message, "data": data, "code": code}
+
+
+EXPORT_COLUMNS = [
+    ("id", "记录ID"),
+    ("task_id", "批量任务ID"),
+    ("product_id", "商品ID"),
+    ("raw_text", "原始评论"),
+    ("clean_text", "清洗后评论"),
+    ("label_text", "情感标签"),
+    ("sentiment_text", "情感结果"),
+    ("confidence", "置信度"),
+    ("strength", "情绪强度(0-10)"),
+    ("cached_text", "是否命中缓存"),
+    ("created_at", "分析时间"),
+]
+
+
+def _format_export_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert raw database rows into a readable report table.
+
+    The database keeps machine-friendly fields such as `label=1` and
+    `sentiment=positive`. The downloaded report is for people to read in Excel,
+    so it uses Chinese headers, stable column order and rounded numeric values.
+    """
+
+    formatted: List[Dict[str, Any]] = []
+    for row in records:
+        sentiment = str(row.get("sentiment") or "")
+        try:
+            confidence = round(float(row.get("confidence") or 0.0), 4)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        try:
+            strength = round(float(row.get("strength") or 0.0), 2)
+        except (TypeError, ValueError):
+            strength = 0.0
+        try:
+            label = int(row.get("label") or 0)
+        except (TypeError, ValueError):
+            label = 0
+
+        item = {
+            "id": row.get("id", ""),
+            "task_id": row.get("task_id", ""),
+            "product_id": row.get("product_id", ""),
+            "raw_text": row.get("raw_text", ""),
+            "clean_text": row.get("clean_text", ""),
+            "label_text": "正向" if label == 1 else "负向",
+            "sentiment_text": "正向 positive" if sentiment == "positive" else "负向 negative",
+            "confidence": confidence,
+            "strength": strength,
+            "cached_text": "是" if bool(row.get("cached")) else "否",
+            "created_at": row.get("created_at", ""),
+        }
+        formatted.append({header: item[key] for key, header in EXPORT_COLUMNS})
+    return formatted
+
+
+def _content_disposition(filename: str) -> str:
+    quoted = quote(filename)
+    return f"attachment; filename={quoted}; filename*=UTF-8''{quoted}"
+
+
+def _autosize_excel_columns(worksheet, dataframe: pd.DataFrame) -> None:
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    worksheet.freeze_panes = "A2"
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+    header_font = Font(color="FFFFFF", bold=True)
+    for cell in worksheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    width_limits = {
+        "原始评论": 42,
+        "清洗后评论": 42,
+        "批量任务ID": 22,
+        "分析时间": 20,
+    }
+    min_widths = {
+        "原始评论": 24,
+        "清洗后评论": 24,
+        "情感结果": 14,
+    }
+    for index, column_name in enumerate(dataframe.columns, start=1):
+        values = [str(column_name)] + ["" if pd.isna(value) else str(value) for value in dataframe[column_name].tolist()]
+        max_len = max(len(value) for value in values)
+        min_width = min_widths.get(str(column_name), 10)
+        width = min(max(max_len + 2, min_width), width_limits.get(str(column_name), 18))
+        worksheet.column_dimensions[worksheet.cell(row=1, column=index).column_letter].width = width
+
+    for row in worksheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    for column_name in ("置信度", "情绪强度(0-10)"):
+        if column_name in dataframe.columns:
+            col_idx = dataframe.columns.get_loc(column_name) + 1
+            for cell in worksheet.iter_cols(min_col=col_idx, max_col=col_idx, min_row=2):
+                for item in cell:
+                    item.number_format = "0.00"
 
 
 def _analyze_and_store(
@@ -343,22 +446,31 @@ def export_task(task_id: str, file_type: str = Query(default="csv", pattern="^(c
     if not records:
         raise HTTPException(status_code=404, detail="该任务没有可导出的记录")
 
+    export_rows = _format_export_records(records)
+    report_name = f"sentiment_report_{task_id}"
+
     if file_type == "xlsx":
         output = io.BytesIO()
-        pd.DataFrame(records).to_excel(output, index=False)
+        dataframe = pd.DataFrame(export_rows)
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            dataframe.to_excel(writer, index=False, sheet_name="情感分析报告")
+            worksheet = writer.sheets["情感分析报告"]
+            _autosize_excel_columns(worksheet, dataframe)
         output.seek(0)
         return StreamingResponse(
             output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{task_id}.xlsx"'},
+            headers={"Content-Disposition": _content_disposition(f"{report_name}.xlsx")},
         )
 
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=list(records[0].keys()))
+    output = io.StringIO(newline="")
+    output.write("\ufeff")
+    fieldnames = [header for _, header in EXPORT_COLUMNS]
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
-    writer.writerows(records)
+    writer.writerows(export_rows)
     return StreamingResponse(
         iter([output.getvalue()]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{task_id}.csv"'},
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": _content_disposition(f"{report_name}.csv")},
     )
